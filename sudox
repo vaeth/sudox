@@ -1,0 +1,444 @@
+#! /bin/sh
+# (C) 2005-2011 by Martin Väth <martin@mvath.de>
+
+set -f
+
+# Some paranoia if /bin/sh is bash -
+# after all, this script is highly security relevant:
+[ -n "${BASH}" ] && set -p
+unset IFS BASH_ENV ENV SHELL_OPTS || exit 2
+BASH_ENV=''
+ENV=''
+SHELL_OPTS=''
+OPTIND=1
+[ -z "${BASH_ENV}${ENV}${SHELL_OPTS}" ] || exit 2
+
+# Actually, these are two scripts: The "main" script is documented
+# in the "Usage" function below. However, this script is also
+# called implicitly on the remote side.
+# The "Usage" on the remote side is never printed by this script,
+# because it is not supposed to be called by the user (and it might
+# change in future versions).
+# Currently, the syntax for the remote side is as follows:
+#
+# "${0}" '-remotecall' display1 display2 ... '-dispend;' \
+#        'Name of socket used to transfer data'|'' \
+#        [chown tty newuser:group]|'' \
+#        command [args for command]
+#
+# The actual authorization data is not passed as an arg but via the socket.
+# First, some helper functions needed for both parts of the script:
+
+MsgErr() {
+	printf '%s\n' "${*}" >&2
+}
+
+Warning() {
+	MsgErr "${0##*/}: ${*}"
+}
+
+Fatal() {
+	Warning "${*}"
+	exit 2
+}
+
+# "Push VAR args" will append args to a "pseudo-array" VAR.
+# "Push -c VAR args" will clear VAR in advance. args may be empty.
+Push() {
+	case "${1}" in
+	-*)	shift; eval "${1}=''";;
+	esac
+	PushD_="${1}"
+	shift
+	eval "for PushA_
+	do	[ -z \"\${${PushD_}}\" ] && ${PushD_}=\\' \
+			|| ${PushD_}=\"\${${PushD_}} '\"
+		PushB_=\"\${PushA_}\"
+		while {
+			PushC_=\"\${PushB_%%\\'*}\"
+			[ \"\${PushC_}\" != \"\${PushB_}\" ]
+		}
+		do	${PushD_}=\"\${${PushD_}}\${PushC_}'\\\\''\"
+			PushB_=\"\${PushB_#*\\'}\"
+		done
+		${PushD_}=\"\${${PushD_}}\${PushB_}'\"
+	done"
+}
+
+DoExec() {
+	if [ ${#} -eq 0 ]
+	then	exec "${SHELL}"
+	else	Push -c mycmd "${@}"
+		exec "${SHELL}" -c "${mycmd}"
+	fi
+	Fatal "cannot execute ${SHELL}"
+}
+
+# Now the remote part of the script:
+
+AddAuthorities() {
+	for a
+	do	printf '%s' "${a}" | xauth nmerge -
+	done
+}
+
+Troyan() {
+	Fatal "${1}. Probably some Troyan running"
+}
+
+ReadTransfer() {
+	read count || Troyan "unreadable socket"
+	case "${count}" in
+	*[!0-9]*)	Troyan "corruption with socket";;
+	esac
+	if [ "${count}" -gt 0 ]
+	then	transfer=`dd bs="${count}" count=1 2>/dev/null && echo x` || \
+			Troyan "corruption with socket"
+		transfer="${transfer%x}"
+		[ ${count} -eq ${#transfer} ] || Troyan "corruption with socket"
+	fi
+}
+
+ParseSocket() {
+	[ -z "${1}" ] && return
+	test -p "${1}" || Troyan "no socket ${1}"
+	ReadTransfer <"${1}"
+	eval "AddAuthorities ${transfer}"
+}
+
+if [ "${1}" = "-remotecall" ]
+then	shift
+	while [ ${#} -gt 0 ]
+	do	if [ "${1}" = "-dispend;" ]
+		then	shift
+			break
+		fi
+		xauth -q remove "${1}" >/dev/null 2>&1
+		shift
+	done
+	ParseSocket "${1}"
+	shift
+	SUDO_COMMAND=''
+	unset SUDO_COMMAND
+	if [ -n "${1}" ]
+	then	"${1}" "-v" "--" "${3}" "${2}" || \
+			Fatal "Could not change permissions of tty ${2} to ${3}"
+		shift 3
+	else	shift
+	fi
+	DoExec "${@}"
+fi
+
+# Now the main part of the script (i.e. the "server" side called by the user):
+
+Usage() {
+	name="${0##*/}"
+	printf '%s\n' \
+"Usage: ${name} [options] [user [command]]
+Similar to sudo -H -u user -s -- but transfer also X authority data.
+Most options are passed to sudo, essentially with the following exceptions:
+
+-f Start even if tmux/screen seems to be running.
+   This might be a security risk.
+-s Start a tmux/screen session. Think about combining with -y or -Y
+-S As -s but prefer screen over tmux
+-Y Chown (possibly using sudo once more) the attached \$TTY to the
+   new user/group before the actual execution.
+   If you use ${name} to switch from an \"untrusted\" user to a \"trusted\" user
+   this increases your security, because then what you type in the new session
+   cannot be logged from the \"untrusted\" user, unless a log demon was
+   started from within the current session before ${name} is executed.
+   However, if you use ${name} to switch from a \"trusted\" user to an
+   \"untrusted\" user, the untrusted user might log what you enter in your
+   session even when ${name} is finished. As a workaround you might use:
+-y As -Y but after finishing use chown (possibly using sudo once more) to
+   restore the original ownership of the attached \$TTY. Be aware,
+   however, that this can only work if the process is not killed and that
+   the remote user still has the privileges to log the password you enter
+   in this sudo call.
+-x Do not transfer any X authority data
+-X Execute command as file, i.e. behave as sudo -H -u user -- (without -s)
+   Useful for entries in /etc/sudoers. This option implies -x
+-u Generate only an untrusted permission. You might combine this with:
+-t TIMEOUT (in seconds). Time for which the untrusted permission is valid.
+   The value 0 (default) means: forever.
+-U Delete all X authority data on the remote side - similar to -u -t 1
+-h Print this help"
+	exit ${1:-1}
+}
+
+ClearMyTraps() {
+	my_traps='-'
+	trap - EXIT HUP INT TERM
+}
+ClearMyTraps
+AddTrap() {
+	if [ ${my_traps} = '-' ]
+	then	Push -c my_traps "${@}"
+		trap MyTrap EXIT HUP INT TERM
+	else	Push my_traps "${@}"
+	fi
+}
+
+retvalue=0
+MyTrap() {
+	trap : EXIT HUP INT TERM
+	eval "${my_traps}"
+	ClearMyTraps
+	exit ${retvalue}
+}
+
+tmpdir=''
+RmTemp() {
+	[ -n "${tmpdir}" ] && test -d "${tmpdir}" && rm -rf -- "${tmpdir}"
+	tmpdir=''
+}
+
+MkTemp() {
+	[ -n "${tmpdir}" ] && return
+	AddTrap RmTemp
+	if command -v mktemp >/dev/null 2>&1
+	then	tmpdir=`mktemp -d "/tmp/${0##*/}.XXXXXXXX"` && \
+			[ -n "${tmpdir}" ] && return
+		ErrMessage 'cannot create temporary directory'
+		return 2
+	fi
+	if [ -z "${have_random}" ]
+	then	r="${RANDOM}"
+		if [ "${r}" = "${RANDOM}" ] && \
+			[ "${r}" = "${RANDOM}" ]
+		then	have_random=false
+			r=`od -d -N2 /dev/random 2>/dev/null` || r=''
+			r=`echo ${r}`; r="${r#* }"; r="${r% *}"
+			if [ -z "${r}" ]
+			then	r=1
+			else	r=$(( ${r} % 32768 ))
+				[ "${r}" -eq 0 ] && r=1
+			fi
+		else	have_random=:
+		fi
+		t=''
+	fi
+	c=0
+	while [ ${c} -le 999 ]
+	do	if [ -n "${t}" ]
+		then	if ${have_random}
+			then	r="${RANDOM}"
+			else	r=$(( ${r} * 13821 ))
+				r=$(( ${r} % 32768 ))
+			fi
+		fi
+		t="/tmp/${0##*/}.${$}${c}${r}"
+		mkdir "${t}" && tmpdir="${t}" && return
+		c=$(( ${c} + 1 ))
+	done
+	ErrMessage 'cannot create temporary directory'
+	return 2
+}
+
+# Parse options
+
+untrusted=''
+timeout=0
+nox=false
+noshell=false
+screen=''
+chownpts=''
+force=false
+Push -c sudoargs
+while getopts "fUut:xXHsSyY?ha:c:p:VlLkKbPS" opt
+do	case "${opt}" in
+	f)	force=:;;
+	U)	untrusted=2;;
+	u)	untrusted=1;;
+	t)	timeout="${OPTARG}";;
+	x)	nox=:;;
+	X)	nox=:; noshell=:;;
+	s)	screen='tmux screen';;
+	S)	screen='screen tmux';;
+	y)	chownpts=1;;
+	Y)	chownpts=0;;
+	H)	:;;
+	\?|h)	Usage;;
+	a|c|p)	Push sudoargs "-${opt}" "${OPTARG}";;
+	*)	Push sudoargs "-${opt}";;
+	esac
+done
+shift $(( ${OPTIND} - 1 ))
+
+# Parse remainder
+
+Push sudoargs "-H"
+remoteuse='root'
+if [ ${#} -gt 0 ]
+then	remoteuse="${1}"
+	shift
+	Push sudoargs "-u" "${remoteuse}"
+fi
+command -v id >/dev/null 2>&1 || Fatal "Cannot find id"
+if [ "`id -un`" = "${remoteuse}" ]
+then	Warning "Warning: remote user is the current user. Probably this
+is a mistake - therefore, no X authorization data is modified.
+"
+	DoExec "${@}"
+fi
+
+${force} || [ -z "${STY}${TMUX}" ] || \
+	Fatal "\"screen\" or \"tmux\" seems to be running.
+Using su within a screen session is a security risk, because the original
+user might have access from other screen sessions.
+Better \"exit\" the screen session first.
+Use option -f if you are willing to take the risk. Exiting for now."
+
+
+# Generate remote command and data to transfer
+
+Push -c displays
+
+CalcTransfer() {
+	eval "set -- ${displays}"
+	for a
+	do	b=`xauth -q nlist "${a}"` && [ -n "${b}" ] && \
+			Push transfer "${b}"
+	done
+}
+
+Push -c transfer
+Push -c displays
+if ! ${nox}
+then	# Generate list of all displays to transfer
+	[ -n "${DISPLAY}" ] && Push displays "${DISPLAY}"
+	dispnum="${DISPLAY##*:}"
+	if [ "${dispnum}" != "${DISPLAY}" ]
+	then	disphost="${DISPLAY%:*}"
+		if [ -n "${disphost}" ]
+		then	Push -c displays "${disphost}/unix:${dispnum}"
+			if [ "${disphost}" = 'localhost' ]
+			then	[ -z "${HOSTNAME}" ] && HOSTNAME="`hostname`"
+				Push -c displays "${HOSTNAME}:${dispnum}" "${HOSTNAME}/unix:${dispnum}"
+			fi
+		fi
+	fi
+
+	# Generate authorization data in ${transfer}
+	if [ -n "${untrusted}" ]
+	then	if [ "${untrusted}" = "1" ] && [ -n "${DISPLAY}" ]
+		then	MkTemp
+			a="${tmpdir}/untrusted"
+			:>"${a}" \
+			&& xauth -q -f "${a}" "${DISPLAY}" . untrusted timeout "${timeout}" \
+			&&	b=`xauth -f "${a}" nlist "${DISPLAY}"` \
+			||	Fatal "failed to create untrusted permissions"
+			rm -- "${a}"
+			Push -c transfer "${b}"
+		fi
+	else	CalcTransfer
+	fi
+
+	# Do not inherit .Xauthority file:
+	unset XAUTHORITY
+fi
+
+MyChown() {
+	if [ "${oriuser}" -eq 0 ]
+	then	chown -v -- "${1}" "${ttyvalue}"
+	else	MsgErr "sudo chown ${1} ${ttyvalue}"
+		sudo "${chownprg}" -v -- "${1}" "${ttyvalue}"
+	fi || Fatal "failed: chown ${1} ${ttyvalue}"
+}
+
+changeto=''
+if [ -n "${chownpts}" ]
+then	ttyvalue="`tty`" && [ -n "${ttyvalue}" ] && \
+	if command -v readlink >/dev/null 2>&1
+	then	ttyvalue=`readlink -f -- "${ttyvalue}"` && \
+		[ -n "${ttyvalue}" ]
+	fi && test -r "${ttyvalue}" || Fatal "Could not determine tty"
+	oriuser="`id -u`"
+	chownprg="`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
+		command -v chown 2>/dev/null`" && \
+		[ -n "${chownprg}" ] || Fatal "Cannot find chown"
+	remotegroup=`id -g "${remoteuse}"` && \
+		[ -n "${remotegroup}" ] \
+			|| Fatal "User ${remoteuse} has no group"
+	# If we change TO root, we change the tty permissions on the remote side:
+	# This way, we need one call less to sudo.
+	if [ "${remoteuse}" != "root" ] || ${noshell}
+	then
+		MyChown "${remoteuse}:${remotegroup}"
+	else	changeto="${remoteuse}:${remotegroup}"
+	fi
+fi
+
+# Generate socket
+if [ -z "${transfer}" ]
+then	socket=''
+	RmTemp
+	ClearMyTraps
+else	MkTemp
+	chmod -- 711 "${tmpdir}"
+	socket="${tmpdir}/socket"
+	( umask 000 && mkfifo -- "${socket}" ) \
+		|| Fatal "cannot create socket ${socket}"
+fi
+
+# Generate ResetTty trap for -y
+
+ResetTty() {
+	id="`id -g`"
+	MyChown "${oriuser}:${id}"
+}
+[ "${chownpts}" = "1" ] && AddTrap 'ResetTty'
+
+# Generate remote command:
+
+GenRemote() {
+	Push sudoargs '--'
+	${nox} && ${noshell} && [ -z "${ttyvalue}" ] && return
+	Push sudoargs "${1}"
+	eval "set -- ${displays}"
+	Push sudoargs '-remotecall' "${@}" '-dispend;'
+	Push sudoargs "${socket}"
+	if [ -n "${changeto}" ]
+	then	Push sudoargs "${chownprg}" "${ttyvalue}" "${changeto}"
+	else	Push sudoargs ''
+	fi
+}
+GenRemote "${0}"
+
+if [ -n "${screen}" ]
+then	for screenprg in ${screen}
+	do	if screen=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
+		command -v "${screenprg}" 2>/dev/null` && [ -n "${screen}" ]
+		then	Push sudoargs "${screen}" '--'
+			case "${screenprg}" in
+			screen)	unset STY;;
+			tmux)	unset TMUX;;
+			esac
+			screen=''
+			break
+		fi
+	done
+	[ -z "${screen}" ] || Fatal "tmux/screen not found"
+fi
+
+Push sudoargs "${@}"
+eval "set -- ${sudoargs}"
+
+# Fill socket:
+
+if [ -n "${socket}" ]
+then	{
+		printf '%s\n%s' "${#transfer}" "${transfer}" >"${socket}"
+		RmTemp
+		[ "${chownpts}" = "1" ] || ClearMyTraps
+	} &
+fi
+
+if [ "${my_traps}" = '-' ]
+then	exec sudo "${@}"
+	Fatal "cannot exec sudo"
+fi
+sudo "${@}"
+retvalue=${?}
+exit ${retvalue}

@@ -1,0 +1,14 @@
+#compdef sudox
+_arguments -s -S -A '-*' : \
+'-f[Start even if tmux/screen seems to be running]' \
+'-s[Start a tmux/screen session. Think about combining with -y or -Y]' \
+'-S[As -s but prefer screen over tmux]' \
+'-Y[Chown (possibly using sudo once more) the attached $TTY]' \
+'-y[As -Y but chown twice]' \
+'-x[Do not transfer any X authority data]' \
+'-X[Execute command as file, i.e. behave as sudo -H -u user --]' \
+'-u[Generate only an untrusted permission.]' \
+'-t+[Time for which the untrusted permission is valid]:time:(0)' \
+'-U[Delete all X authority data on the remote side - similar to -u -t 1]' \
+'(* -)-h[Print help]' \
+'*::command: _normal'
