@@ -1,11 +1,11 @@
 #! /bin/sh
-# (C) 2005-2011 by Martin Väth <martin@mvath.de>
+# (C) Martin V\"ath <martin@mvath.de>
 
 set -f
 
 # Some paranoia if /bin/sh is bash -
 # after all, this script is highly security relevant:
-[ -n "${BASH}" ] && set -p
+[ -z "${BASH}" ] || set -p
 unset IFS BASH_ENV ENV SHELL_OPTS || exit 2
 BASH_ENV=''
 ENV=''
@@ -29,8 +29,12 @@ OPTIND=1
 # The actual authorization data is not passed as an arg but via the socket.
 # First, some helper functions needed for both parts of the script:
 
+Echo() {
+	printf '%s\n' "${*}"
+}
+
 MsgErr() {
-	printf '%s\n' "${*}" >&2
+	Echo "${*}" >&2
 }
 
 Warning() {
@@ -45,21 +49,22 @@ Fatal() {
 # "Push VAR args" will append args to a "pseudo-array" VAR.
 # "Push -c VAR args" will clear VAR in advance. args may be empty.
 Push() {
-	case "${1}" in
-	-*)	shift; eval "${1}=''";;
+	case ${1} in
+	-*)	shift
+		eval "${1}=''";;
 	esac
-	PushD_="${1}"
+	PushD_=${1}
 	shift
 	eval "for PushA_
 	do	[ -z \"\${${PushD_}}\" ] && ${PushD_}=\\' \
 			|| ${PushD_}=\"\${${PushD_}} '\"
-		PushB_=\"\${PushA_}\"
+		PushB_=\${PushA_}
 		while {
-			PushC_=\"\${PushB_%%\\'*}\"
+			PushC_=\${PushB_%%\\'*}
 			[ \"\${PushC_}\" != \"\${PushB_}\" ]
 		}
 		do	${PushD_}=\"\${${PushD_}}\${PushC_}'\\\\''\"
-			PushB_=\"\${PushB_#*\\'}\"
+			PushB_=\${PushB_#*\\'}
 		done
 		${PushD_}=\"\${${PushD_}}\${PushB_}'\"
 	done"
@@ -87,14 +92,17 @@ Troyan() {
 }
 
 ReadTransfer() {
-	read count || Troyan "unreadable socket"
-	case "${count}" in
-	*[!0-9]*)	Troyan "corruption with socket";;
-	esac
+	read -r count || Troyan "unreadable socket"
+	(	unset LC_ALL
+		LC_COLLATE=C
+		case ${count:-x} in
+		*[!0-9]*)	false;;
+		esac
+	) || Troyan "corruption with socket"
 	if [ "${count}" -gt 0 ]
 	then	transfer=`dd bs="${count}" count=1 2>/dev/null && echo x` || \
-			Troyan "corruption with socket"
-		transfer="${transfer%x}"
+			Troyan 'corruption with socket'
+		transfer=${transfer%x}
 		[ ${count} -eq ${#transfer} ] || Troyan "corruption with socket"
 	fi
 }
@@ -106,10 +114,10 @@ ParseSocket() {
 	eval "AddAuthorities ${transfer}"
 }
 
-if [ "${1}" = "-remotecall" ]
+if [ "${1}" = '-remotecall' ]
 then	shift
 	while [ ${#} -gt 0 ]
-	do	if [ "${1}" = "-dispend;" ]
+	do	if [ "${1}" = '-dispend;' ]
 		then	shift
 			break
 		fi
@@ -132,9 +140,8 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Usage() {
-	name="${0##*/}"
-	printf '%s\n' \
-"Usage: ${name} [options] [user [command]]
+	name=${0##*/}
+	Echo "Usage: ${name} [options] [user [command]]
 Similar to sudo -H -u user -s -- but transfer also X authority data.
 Most options are passed to sudo, essentially with the following exceptions:
 
@@ -204,12 +211,12 @@ MkTemp() {
 		return 2
 	fi
 	if [ -z "${have_random}" ]
-	then	r="${RANDOM}"
+	then	r=${RANDOM}
 		if [ "${r}" = "${RANDOM}" ] && \
 			[ "${r}" = "${RANDOM}" ]
 		then	have_random=false
 			r=`od -d -N2 /dev/random 2>/dev/null` || r=''
-			r=`echo ${r}`; r="${r#* }"; r="${r% *}"
+			r=`printf '%s' ${r}`
 			if [ -z "${r}" ]
 			then	r=1
 			else	r=$(( ${r} % 32768 ))
@@ -223,13 +230,13 @@ MkTemp() {
 	while [ ${c} -le 999 ]
 	do	if [ -n "${t}" ]
 		then	if ${have_random}
-			then	r="${RANDOM}"
+			then	r=${RANDOM}
 			else	r=$(( ${r} * 13821 ))
 				r=$(( ${r} % 32768 ))
 			fi
 		fi
 		t="/tmp/${0##*/}.${$}${c}${r}"
-		mkdir "${t}" && tmpdir="${t}" && return
+		mkdir "${t}" && tmpdir=${t} && return
 		c=$(( ${c} + 1 ))
 	done
 	ErrMessage 'cannot create temporary directory'
@@ -247,20 +254,21 @@ chownpts=''
 force=false
 Push -c sudoargs
 while getopts "fUut:xXHsSyY?ha:c:p:VlLkKbPS" opt
-do	case "${opt}" in
+do	case ${opt} in
 	f)	force=:;;
 	U)	untrusted=2;;
 	u)	untrusted=1;;
-	t)	timeout="${OPTARG}";;
+	t)	timeout=${OPTARG};;
 	x)	nox=:;;
-	X)	nox=:; noshell=:;;
+	X)	nox=:
+		noshell=:;;
 	s)	screen='tmux screen';;
 	S)	screen='screen tmux';;
 	y)	chownpts=1;;
 	Y)	chownpts=0;;
 	H)	:;;
-	\?|h)	Usage;;
-	a|c|p)	Push sudoargs "-${opt}" "${OPTARG}";;
+	[h?])	Usage;;
+	[acp])	Push sudoargs "-${opt}" "${OPTARG}";;
 	*)	Push sudoargs "-${opt}";;
 	esac
 done
@@ -271,7 +279,7 @@ shift $(( ${OPTIND} - 1 ))
 Push sudoargs "-H"
 remoteuse='root'
 if [ ${#} -gt 0 ]
-then	remoteuse="${1}"
+then	remoteuse=${1}
 	shift
 	Push sudoargs "-u" "${remoteuse}"
 fi
@@ -308,13 +316,13 @@ Push -c displays
 if ! ${nox}
 then	# Generate list of all displays to transfer
 	[ -n "${DISPLAY}" ] && Push displays "${DISPLAY}"
-	dispnum="${DISPLAY##*:}"
+	dispnum=${DISPLAY##*:}
 	if [ "${dispnum}" != "${DISPLAY}" ]
-	then	disphost="${DISPLAY%:*}"
+	then	disphost=${DISPLAY%:*}
 		if [ -n "${disphost}" ]
 		then	Push -c displays "${disphost}/unix:${dispnum}"
 			if [ "${disphost}" = 'localhost' ]
-			then	[ -z "${HOSTNAME}" ] && HOSTNAME="`hostname`"
+			then	[ -z "${HOSTNAME}" ] && HOSTNAME=`hostname`
 				Push -c displays "${HOSTNAME}:${dispnum}" "${HOSTNAME}/unix:${dispnum}"
 			fi
 		fi
@@ -322,7 +330,7 @@ then	# Generate list of all displays to transfer
 
 	# Generate authorization data in ${transfer}
 	if [ -n "${untrusted}" ]
-	then	if [ "${untrusted}" = "1" ] && [ -n "${DISPLAY}" ]
+	then	if [ "${untrusted}" = '1' ] && [ -n "${DISPLAY}" ]
 		then	MkTemp
 			a="${tmpdir}/untrusted"
 			:>"${a}" \
@@ -349,21 +357,21 @@ MyChown() {
 
 changeto=''
 if [ -n "${chownpts}" ]
-then	ttyvalue="`tty`" && [ -n "${ttyvalue}" ] && \
+then	ttyvalue=`tty` && [ -n "${ttyvalue}" ] && \
 	if command -v readlink >/dev/null 2>&1
 	then	ttyvalue=`readlink -f -- "${ttyvalue}"` && \
 		[ -n "${ttyvalue}" ]
 	fi && test -r "${ttyvalue}" || Fatal "Could not determine tty"
-	oriuser="`id -u`"
-	chownprg="`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
-		command -v chown 2>/dev/null`" && \
+	oriuser=`id -u`
+	chownprg=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
+		command -v chown 2>/dev/null` && \
 		[ -n "${chownprg}" ] || Fatal "Cannot find chown"
 	remotegroup=`id -g "${remoteuse}"` && \
 		[ -n "${remotegroup}" ] \
 			|| Fatal "User ${remoteuse} has no group"
 	# If we change TO root, we change the tty permissions on the remote side:
 	# This way, we need one call less to sudo.
-	if [ "${remoteuse}" != "root" ] || ${noshell}
+	if [ "${remoteuse}" != 'root' ] || ${noshell}
 	then
 		MyChown "${remoteuse}:${remotegroup}"
 	else	changeto="${remoteuse}:${remotegroup}"
@@ -385,10 +393,10 @@ fi
 # Generate ResetTty trap for -y
 
 ResetTty() {
-	id="`id -g`"
+	id=`id -g`
 	MyChown "${oriuser}:${id}"
 }
-[ "${chownpts}" = "1" ] && AddTrap 'ResetTty'
+[ "${chownpts}" = '1' ] && AddTrap 'ResetTty'
 
 # Generate remote command:
 
@@ -411,7 +419,7 @@ then	for screenprg in ${screen}
 	do	if screen=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
 		command -v "${screenprg}" 2>/dev/null` && [ -n "${screen}" ]
 		then	Push sudoargs "${screen}" '--'
-			case "${screenprg}" in
+			case ${screenprg} in
 			screen)	unset STY;;
 			tmux)	unset TMUX;;
 			esac
@@ -431,7 +439,7 @@ if [ -n "${socket}" ]
 then	{
 		printf '%s\n%s' "${#transfer}" "${transfer}" >"${socket}"
 		RmTemp
-		[ "${chownpts}" = "1" ] || ClearMyTraps
+		[ "${chownpts}" = '1' ] || ClearMyTraps
 	} &
 fi
 
