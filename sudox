@@ -7,9 +7,9 @@ set -f
 # after all, this script is highly security relevant:
 [ -z "${BASH}" ] || set -p
 unset IFS BASH_ENV ENV SHELL_OPTS || exit 2
-BASH_ENV=''
-ENV=''
-SHELL_OPTS=''
+BASH_ENV=
+ENV=
+SHELL_OPTS=
 OPTIND=1
 [ -z "${BASH_ENV}${ENV}${SHELL_OPTS}" ] || exit 2
 
@@ -51,7 +51,7 @@ Fatal() {
 Push() {
 	case ${1} in
 	-*)	shift
-		eval "${1}=''";;
+		eval ${1}=;;
 	esac
 	PushD_=${1}
 	shift
@@ -126,7 +126,7 @@ then	shift
 	done
 	ParseSocket "${1}"
 	shift
-	SUDO_COMMAND=''
+	SUDO_COMMAND=
 	unset SUDO_COMMAND
 	if [ -n "${1}" ]
 	then	"${1}" "-v" "--" "${3}" "${2}" || \
@@ -195,10 +195,10 @@ MyTrap() {
 	exit ${retvalue}
 }
 
-tmpdir=''
+tmpdir=
 RmTemp() {
 	[ -n "${tmpdir}" ] && test -d "${tmpdir}" && rm -rf -- "${tmpdir}"
-	tmpdir=''
+	tmpdir=
 }
 
 MkTemp() {
@@ -215,7 +215,7 @@ MkTemp() {
 		if [ "${r}" = "${RANDOM}" ] && \
 			[ "${r}" = "${RANDOM}" ]
 		then	have_random=false
-			r=`od -d -N2 /dev/random 2>/dev/null` || r=''
+			r=`od -d -N2 /dev/random 2>/dev/null` || r=
 			r=`printf '%s' ${r}`
 			if [ -z "${r}" ]
 			then	r=1
@@ -224,7 +224,7 @@ MkTemp() {
 			fi
 		else	have_random=:
 		fi
-		t=''
+		t=
 	fi
 	c=0
 	while [ ${c} -le 999 ]
@@ -245,12 +245,12 @@ MkTemp() {
 
 # Parse options
 
-untrusted=''
+untrusted=
 timeout=0
 nox=false
 noshell=false
-screen=''
-chownpts=''
+screen=
+chownpts=
 force=false
 Push -c sudoargs
 while getopts "fUut:xXHsSyY?ha:c:p:VlLkKbPS" opt
@@ -355,7 +355,7 @@ MyChown() {
 	fi || Fatal "failed: chown ${1} ${ttyvalue}"
 }
 
-changeto=''
+changeto=
 if [ -n "${chownpts}" ]
 then	ttyvalue=`tty` && [ -n "${ttyvalue}" ] && \
 	if command -v readlink >/dev/null 2>&1
@@ -380,7 +380,7 @@ fi
 
 # Generate socket
 if [ -z "${transfer}" ]
-then	socket=''
+then	socket=
 	RmTemp
 	ClearMyTraps
 else	MkTemp
@@ -423,7 +423,7 @@ then	for screenprg in ${screen}
 			screen)	unset STY;;
 			tmux)	unset TMUX;;
 			esac
-			screen=''
+			screen=
 			break
 		fi
 	done
