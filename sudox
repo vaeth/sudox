@@ -129,8 +129,8 @@ then	shift
 	SUDO_COMMAND=
 	unset SUDO_COMMAND
 	if [ -n "${1}" ]
-	then	"${1}" "-v" "--" "${3}" "${2}" || \
-			Fatal "Could not change permissions of tty ${2} to ${3}"
+	then	"${1}" "-v" "--" "${3}" "${2}" || Fatal \
+"Could not change permissions of tty ${2} to ${3}"
 		shift 3
 	else	shift
 	fi
@@ -166,7 +166,8 @@ Most options are passed to sudo, essentially with the following exceptions:
 -x Do not transfer any X authority data
 -X Execute command as file, i.e. behave as sudo -H -u user -- (without -s)
    Useful for entries in /etc/sudoers. This option implies -x
--u Generate only an untrusted permission. You might combine this with:
+-u Generate only an untrusted permission. (This requires that your xorg-server
+   was compiled with --enable-xcsecurity.) You might combine this with:
 -t TIMEOUT (in seconds). Time for which the untrusted permission is valid.
    The value 0 (default) means: forever.
 -U Delete all X authority data on the remote side - similar to -u -t 1
@@ -283,7 +284,7 @@ then	remoteuse=${1}
 	shift
 	Push sudoargs "-u" "${remoteuse}"
 fi
-command -v id >/dev/null 2>&1 || Fatal "Cannot find id"
+command -v id >/dev/null 2>&1 || Fatal 'Cannot find id'
 if [ "`id -un`" = "${remoteuse}" ]
 then	Warning "Warning: remote user is the current user. Probably this
 is a mistake - therefore, no X authorization data is modified.
@@ -292,11 +293,11 @@ is a mistake - therefore, no X authorization data is modified.
 fi
 
 ${force} || [ -z "${STY}${TMUX}" ] || \
-	Fatal "\"screen\" or \"tmux\" seems to be running.
+	Fatal '"screen" or "tmux" seems to be running.
 Using su within a screen session is a security risk, because the original
 user might have access from other screen sessions.
-Better \"exit\" the screen session first.
-Use option -f if you are willing to take the risk. Exiting for now."
+Better "exit" the screen session first.
+Use option -f if you are willing to take the risk. Exiting for now.'
 
 
 # Generate remote command and data to transfer
@@ -333,10 +334,14 @@ then	# Generate list of all displays to transfer
 	then	if [ "${untrusted}" = '1' ] && [ -n "${DISPLAY}" ]
 		then	MkTemp
 			a="${tmpdir}/untrusted"
-			:>"${a}" \
-			&& xauth -q -f "${a}" "${DISPLAY}" . untrusted timeout "${timeout}" \
-			&&	b=`xauth -f "${a}" nlist "${DISPLAY}"` \
-			||	Fatal "failed to create untrusted permissions"
+			:>"${a}" || Fatal "cannot create ${a}"
+			xauth -q -f "${a}" generate "${DISPLAY}" . untrusted \
+				timeout "${timeout}" || Fatal \
+'failed to create untrusted permissions.
+Perhaps your xorg-server was compiled without --enable-xcsecurity'
+			b=`xauth -f "${a}" nlist "${DISPLAY}"` \
+			&& [ -n "${b}" ] || Fatal \
+'failed to source data with untrusted permission'
 			rm -- "${a}"
 			Push -c transfer "${b}"
 		fi
@@ -361,11 +366,11 @@ then	ttyvalue=`tty` && [ -n "${ttyvalue}" ] && \
 	if command -v readlink >/dev/null 2>&1
 	then	ttyvalue=`readlink -f -- "${ttyvalue}"` && \
 		[ -n "${ttyvalue}" ]
-	fi && test -r "${ttyvalue}" || Fatal "Could not determine tty"
+	fi && test -r "${ttyvalue}" || Fatal 'could not determine tty'
 	oriuser=`id -u`
 	chownprg=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
 		command -v chown 2>/dev/null` && \
-		[ -n "${chownprg}" ] || Fatal "Cannot find chown"
+		[ -n "${chownprg}" ] || Fatal 'cannot find chown'
 	remotegroup=`id -g "${remoteuse}"` && \
 		[ -n "${remotegroup}" ] \
 			|| Fatal "User ${remoteuse} has no group"
@@ -420,14 +425,16 @@ then	for screenprg in ${screen}
 		command -v "${screenprg}" 2>/dev/null` && [ -n "${screen}" ]
 		then	Push sudoargs "${screen}" '--'
 			case ${screenprg} in
-			screen)	unset STY;;
-			tmux)	unset TMUX;;
+			screen)
+				unset STY;;
+			tmux)
+				unset TMUX;;
 			esac
 			screen=
 			break
 		fi
 	done
-	[ -z "${screen}" ] || Fatal "tmux/screen not found"
+	[ -z "${screen}" ] || Fatal 'tmux/screen not found'
 fi
 
 Push sudoargs "${@}"
@@ -445,7 +452,7 @@ fi
 
 if [ "${my_traps}" = '-' ]
 then	exec sudo "${@}"
-	Fatal "cannot exec sudo"
+	Fatal 'cannot exec sudo'
 fi
 sudo "${@}"
 retvalue=${?}
