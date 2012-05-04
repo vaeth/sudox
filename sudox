@@ -46,28 +46,9 @@ Fatal() {
 	exit 2
 }
 
-# "Push VAR args" will append args to a "pseudo-array" VAR.
-# "Push -c VAR args" will clear VAR in advance. args may be empty.
 Push() {
-	case ${1} in
-	-*)	shift
-		eval ${1}=;;
-	esac
-	PushD_=${1}
-	shift
-	eval "for PushA_
-	do	[ -z \"\${${PushD_}}\" ] && ${PushD_}=\\' \
-			|| ${PushD_}=\"\${${PushD_}} '\"
-		PushB_=\${PushA_}
-		while {
-			PushC_=\${PushB_%%\\'*}
-			[ \"\${PushC_}\" != \"\${PushB_}\" ]
-		}
-		do	${PushD_}=\"\${${PushD_}}\${PushC_}'\\\\''\"
-			PushB_=\${PushB_#*\\'}
-		done
-		${PushD_}=\"\${${PushD_}}\${PushB_}'\"
-	done"
+	. push.sh
+	Push "${@}"
 }
 
 DoExec() {
@@ -237,7 +218,7 @@ MkTemp() {
 			fi
 		fi
 		t="/tmp/${0##*/}.${$}${c}${r}"
-		mkdir "${t}" && tmpdir=${t} && return
+		mkdir -m 700 "${t}" && tmpdir=${t} && return
 		c=$(( ${c} + 1 ))
 	done
 	ErrMessage 'cannot create temporary directory'
