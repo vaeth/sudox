@@ -5,13 +5,13 @@ set -f
 
 # Some paranoia if /bin/sh is bash -
 # after all, this script is highly security relevant:
-[ -z "${BASH}" ] || set -p
+[ -z "${BASH:++}" ] || set -p
 unset IFS BASH_ENV ENV SHELL_OPTS || exit 2
 BASH_ENV=
 ENV=
 SHELL_OPTS=
 OPTIND=1
-[ -z "${BASH_ENV}${ENV}${SHELL_OPTS}" ] || exit 2
+[ -z "${BASH_ENV:++}${ENV:++}${SHELL_OPTS:++}" ] || exit 2
 
 # Actually, these are two scripts: The "main" script is documented
 # in the "Usage" function below. However, this script is also
@@ -89,7 +89,7 @@ ReadTransfer() {
 }
 
 ParseSocket() {
-	[ -z "${1}" ] && return
+	[ -z "${1:++}" ] && return
 	test -p "${1}" || Troyan "no socket ${1}"
 	ReadTransfer <"${1}"
 	eval "AddAuthorities ${transfer}"
@@ -109,7 +109,7 @@ then	shift
 	shift
 	SUDO_COMMAND=
 	unset SUDO_COMMAND
-	if [ -n "${1}" ]
+	if [ -n "${1:++}" ]
 	then	"${1}" "-v" "--" "${3}" "${2}" || Fatal \
 "Could not change permissions of tty ${2} to ${3}"
 		shift 3
@@ -179,27 +179,27 @@ MyTrap() {
 
 tmpdir=
 RmTemp() {
-	[ -n "${tmpdir}" ] && test -d "${tmpdir}" && rm -rf -- "${tmpdir}"
+	[ -n "${tmpdir:++}" ] && test -d "${tmpdir}" && rm -rf -- "${tmpdir}"
 	tmpdir=
 }
 
 MkTemp() {
-	[ -n "${tmpdir}" ] && return
+	[ -n "${tmpdir:++}" ] && return
 	AddTrap RmTemp
 	if command -v mktemp >/dev/null 2>&1
 	then	tmpdir=`mktemp -d "/tmp/${0##*/}.XXXXXXXX"` && \
-			[ -n "${tmpdir}" ] && return
+			[ -n "${tmpdir:++}" ] && return
 		ErrMessage 'cannot create temporary directory'
 		return 2
 	fi
-	if [ -z "${have_random}" ]
+	if [ -z "${have_random:++}" ]
 	then	r=${RANDOM}
 		if [ "${r}" = "${RANDOM}" ] && \
 			[ "${r}" = "${RANDOM}" ]
 		then	have_random=false
 			r=`od -d -N2 /dev/random 2>/dev/null` || r=
 			r=`printf '%s' ${r}`
-			if [ -z "${r}" ]
+			if [ -z "${r:++}" ]
 			then	r=1
 			else	r=$(( ${r} % 32768 ))
 				[ "${r}" -eq 0 ] && r=1
@@ -210,7 +210,7 @@ MkTemp() {
 	fi
 	c=0
 	while [ ${c} -le 999 ]
-	do	if [ -n "${t}" ]
+	do	if [ -n "${t:++}" ]
 		then	if ${have_random}
 			then	r=${RANDOM}
 			else	r=$(( ${r} * 13821 ))
@@ -273,7 +273,7 @@ is a mistake - therefore, no X authorization data is modified.
 	DoExec "${@}"
 fi
 
-${force} || [ -z "${STY}${TMUX}" ] || \
+${force} || [ -z "${STY:++}${TMUX:++}" ] || \
 	Fatal '"screen" or "tmux" seems to be running.
 Using su within a screen session is a security risk, because the original
 user might have access from other screen sessions.
@@ -288,7 +288,7 @@ Push -c displays
 CalcTransfer() {
 	eval "set -- ${displays}"
 	for a
-	do	b=`xauth -q nlist "${a}"` && [ -n "${b}" ] && \
+	do	b=`xauth -q nlist "${a}"` && [ -n "${b:++}" ] && \
 			Push transfer "${b}"
 	done
 }
@@ -297,22 +297,22 @@ Push -c transfer
 Push -c displays
 if ! ${nox}
 then	# Generate list of all displays to transfer
-	[ -n "${DISPLAY}" ] && Push displays "${DISPLAY}"
+	[ -n "${DISPLAY:++}" ] && Push displays "${DISPLAY}"
 	dispnum=${DISPLAY##*:}
 	if [ "${dispnum}" != "${DISPLAY}" ]
 	then	disphost=${DISPLAY%:*}
-		if [ -n "${disphost}" ]
+		if [ -n "${disphost:++}" ]
 		then	Push -c displays "${disphost}/unix:${dispnum}"
 			if [ "${disphost}" = 'localhost' ]
-			then	[ -z "${HOSTNAME}" ] && HOSTNAME=`hostname`
+			then	[ -z "${HOSTNAME:++}" ] && HOSTNAME=`hostname`
 				Push -c displays "${HOSTNAME}:${dispnum}" "${HOSTNAME}/unix:${dispnum}"
 			fi
 		fi
 	fi
 
 	# Generate authorization data in ${transfer}
-	if [ -n "${untrusted}" ]
-	then	if [ "${untrusted}" = '1' ] && [ -n "${DISPLAY}" ]
+	if [ -n "${untrusted:++}" ]
+	then	if [ "${untrusted}" = '1' ] && [ -n "${DISPLAY:++}" ]
 		then	MkTemp
 			a="${tmpdir}/untrusted"
 			:>"${a}" || Fatal "cannot create ${a}"
@@ -321,7 +321,7 @@ then	# Generate list of all displays to transfer
 'failed to create untrusted permissions.
 Perhaps your xorg-server was compiled without --enable-xcsecurity'
 			b=`xauth -f "${a}" nlist "${DISPLAY}"` \
-			&& [ -n "${b}" ] || Fatal \
+			&& [ -n "${b:++}" ] || Fatal \
 'failed to source data with untrusted permission'
 			rm -- "${a}"
 			Push -c transfer "${b}"
@@ -342,18 +342,18 @@ MyChown() {
 }
 
 changeto=
-if [ -n "${chownpts}" ]
-then	ttyvalue=`tty` && [ -n "${ttyvalue}" ] && \
+if [ -n "${chownpts:++}" ]
+then	ttyvalue=`tty` && [ -n "${ttyvalue:++}" ] && \
 	if command -v readlink >/dev/null 2>&1
 	then	ttyvalue=`readlink -f -- "${ttyvalue}"` && \
-		[ -n "${ttyvalue}" ]
+		[ -n "${ttyvalue:++}" ]
 	fi && test -r "${ttyvalue}" || Fatal 'could not determine tty'
 	oriuser=`id -u`
 	chownprg=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
 		command -v chown 2>/dev/null` && \
-		[ -n "${chownprg}" ] || Fatal 'cannot find chown'
+		[ -n "${chownprg:++}" ] || Fatal 'cannot find chown'
 	remotegroup=`id -g "${remoteuse}"` && \
-		[ -n "${remotegroup}" ] \
+		[ -n "${remotegroup:++}" ] \
 			|| Fatal "User ${remoteuse} has no group"
 	# If we change TO root, we change the tty permissions on the remote side:
 	# This way, we need one call less to sudo.
@@ -365,7 +365,7 @@ then	ttyvalue=`tty` && [ -n "${ttyvalue}" ] && \
 fi
 
 # Generate socket
-if [ -z "${transfer}" ]
+if [ -z "${transfer:++}" ]
 then	socket=
 	RmTemp
 	ClearMyTraps
@@ -388,22 +388,22 @@ ResetTty() {
 
 GenRemote() {
 	Push sudoargs '--'
-	${nox} && ${noshell} && [ -z "${ttyvalue}" ] && return
+	${nox} && ${noshell} && [ -z "${ttyvalue:++}" ] && return
 	Push sudoargs "${1}"
 	eval "set -- ${displays}"
 	Push sudoargs '-remotecall' "${@}" '-dispend;'
 	Push sudoargs "${socket}"
-	if [ -n "${changeto}" ]
+	if [ -n "${changeto:++}" ]
 	then	Push sudoargs "${chownprg}" "${ttyvalue}" "${changeto}"
 	else	Push sudoargs ''
 	fi
 }
 GenRemote "${0}"
 
-if [ -n "${screen}" ]
+if [ -n "${screen:++}" ]
 then	for screenprg in ${screen}
 	do	if screen=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
-		command -v "${screenprg}" 2>/dev/null` && [ -n "${screen}" ]
+		command -v "${screenprg}" 2>/dev/null` && [ -n "${screen:++}" ]
 		then	Push sudoargs "${screen}" '--'
 			case ${screenprg} in
 			screen)
@@ -415,7 +415,7 @@ then	for screenprg in ${screen}
 			break
 		fi
 	done
-	[ -z "${screen}" ] || Fatal 'tmux/screen not found'
+	[ -z "${screen:++}" ] || Fatal 'tmux/screen not found'
 fi
 
 Push sudoargs "${@}"
@@ -423,7 +423,7 @@ eval "set -- ${sudoargs}"
 
 # Fill socket:
 
-if [ -n "${socket}" ]
+if [ -n "${socket:++}" ]
 then	{
 		printf '%s\n%s' "${#transfer}" "${transfer}" >"${socket}"
 		RmTemp
