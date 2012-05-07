@@ -5,13 +5,13 @@ set -f
 
 # Some paranoia if /bin/sh is bash -
 # after all, this script is highly security relevant:
-[ -z "${BASH:++}" ] || set -p
+[ -z "${BASH++}" ] || set -p
 unset IFS BASH_ENV ENV SHELL_OPTS || exit 2
 BASH_ENV=
 ENV=
 SHELL_OPTS=
 OPTIND=1
-[ -z "${BASH_ENV:++}${ENV:++}${SHELL_OPTS:++}" ] || exit 2
+[ -z "${BASH_ENV}${ENV}${SHELL_OPTS}" ] || exit 2
 
 # Actually, these are two scripts: The "main" script is documented
 # in the "Usage" function below. However, this script is also
@@ -352,7 +352,7 @@ then	ttyvalue=`tty` && [ -n "${ttyvalue:++}" ] && \
 	chownprg=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
 		command -v chown 2>/dev/null` && \
 		[ -n "${chownprg:++}" ] || Fatal 'cannot find chown'
-	remotegroup=`id -g "${remoteuse}"` && \
+	remotegroup=`id -g -- "${remoteuse}"` && \
 		[ -n "${remotegroup:++}" ] \
 			|| Fatal "User ${remoteuse} has no group"
 	# If we change TO root, we change the tty permissions on the remote side:
