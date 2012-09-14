@@ -21,7 +21,7 @@ OPTIND=1
 # change in future versions).
 # Currently, the syntax for the remote side is as follows:
 #
-# "${0}" '-remotecall' display1 display2 ... '-dispend;' \
+# "${0}" '-remotecall' "${SHELL}" display1 display2 ... '-dispend;' \
 #        'Name of socket used to transfer data'|'' \
 #        [chown tty newuser:group]|'' \
 #        command [args for command]
@@ -53,11 +53,11 @@ Push() {
 
 DoExec() {
 	if [ ${#} -eq 0 ]
-	then	exec "${SHELL}"
+	then	exec "${SHELL:-sh}"
 	else	Push -c mycmd "${@}"
-		exec "${SHELL}" -c "${mycmd}"
+		exec "${SHELL:-sh}" -c "${mycmd}"
 	fi
-	Fatal "cannot execute ${SHELL}"
+	Fatal "cannot execute ${SHELL:-sh}"
 }
 
 # Now the remote part of the script:
@@ -97,6 +97,9 @@ ParseSocket() {
 
 if [ "${1}" = '-remotecall' ]
 then	shift
+	SHELL=${1}
+	[ -n "${SHELL}" ] && export SHELL
+	shift
 	while [ ${#} -gt 0 ]
 	do	if [ "${1}" = '-dispend;' ]
 		then	shift
@@ -391,7 +394,7 @@ GenRemote() {
 	${nox} && ${noshell} && [ -z "${ttyvalue:++}" ] && return
 	Push sudoargs "${1}"
 	eval "set -- ${displays}"
-	Push sudoargs '-remotecall' "${@}" '-dispend;'
+	Push sudoargs '-remotecall' "${SHELL}" "${@}" '-dispend;'
 	Push sudoargs "${socket}"
 	if [ -n "${changeto:++}" ]
 	then	Push sudoargs "${chownprg}" "${ttyvalue}" "${changeto}"
