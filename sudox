@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/sh
 # (C) Martin V\"ath <martin@mvath.de>
 
 set -f
