@@ -13,6 +13,6 @@ For installation, copy sudox with executable permission in your path.
 To obtain support for zsh completion, you can copy _sudox to a
 directory of zsh's $fpath
 
-You also need push.sh from http://github.com/vaeth/push in your path.
+You also need push.sh from https://github.com/vaeth/push in your path.
 
 For Gentoo, there is an ebuild in the mv overlay (available by layman).
