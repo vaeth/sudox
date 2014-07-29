@@ -11,5 +11,5 @@ _arguments -s -S -A '-*' : \
 '-t+[Time for which the untrusted permission is valid]:time:(0)' \
 '-U[Delete all X authority data on the remote side - similar to -u -t 1]' \
 '(1 * -)-h[Print help]' \
-'1:user name:_users'
+'1:user name:_users' \
 '*:::command:_normal'
