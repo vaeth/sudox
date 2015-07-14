@@ -299,15 +299,17 @@ Push -c transfer
 Push -c displays
 if ! $nox
 then	# Generate list of all displays to transfer
-	[ -n "${DISPLAY:++}" ] && Push displays "$DISPLAY"
-	dispnum=${DISPLAY##*:}
-	if [ "$dispnum" != "$DISPLAY" ]
-	then	disphost=${DISPLAY%:*}
-		if [ -n "${disphost:++}" ]
-		then	Push -c displays "$disphost/unix:$dispnum"
-			if [ "$disphost" = 'localhost' ]
-			then	[ -z "${HOSTNAME:++}" ] && HOSTNAME=`hostname`
-				Push -c displays "$HOSTNAME:$dispnum" "$HOSTNAME/unix:$dispnum"
+	if [ -n "${DISPLAY:++}" ]
+	then	Push displays "$DISPLAY"
+		dispnum=${DISPLAY##*:}
+		if [ "$dispnum" != "$DISPLAY" ]
+		then	disphost=${DISPLAY%:*}
+			if [ -n "${disphost:++}" ]
+			then	Push -c displays "$disphost/unix:$dispnum"
+				if [ "$disphost" = 'localhost' ]
+				then	[ -z "${HOSTNAME:++}" ] && HOSTNAME=`hostname`
+					Push -c displays "$HOSTNAME:$dispnum" "$HOSTNAME/unix:$dispnum"
+				fi
 			fi
 		fi
 	fi
