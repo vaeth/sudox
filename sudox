@@ -54,7 +54,7 @@ Push() {
 DoExec() {
 	if [ $# -eq 0 ]
 	then	exec "${SHELL:-sh}"
-	else	Push -c mycmd "$@"
+	else	Push -c mycmd ${1+"$@"}
 		exec "${SHELL:-sh}" -c "$mycmd"
 	fi
 	Fatal "cannot execute ${SHELL:-sh}"
@@ -95,13 +95,13 @@ ParseSocket() {
 	eval "AddAuthorities $transfer"
 }
 
-if [ "$1" = '-remotecall' ]
+if [ x"${1-}" = x'-remotecall' ]
 then	shift
 	SHELL=$1
 	[ -n "$SHELL" ] && export SHELL
 	shift
 	while [ $# -gt 0 ]
-	do	if [ "$1" = '-dispend;' ]
+	do	if [ x"${1-}" = x'-dispend;' ]
 		then	shift
 			break
 		fi
@@ -118,7 +118,7 @@ then	shift
 		shift 3
 	else	shift
 	fi
-	DoExec "$@"
+	DoExec ${1+"$@"}
 fi
 
 # Now the main part of the script (i.e. the "server" side called by the user):
@@ -165,10 +165,10 @@ ClearMyTraps() {
 }
 ClearMyTraps
 AddTrap() {
-	if [ $my_traps = '-' ]
-	then	Push -c my_traps "$@"
+	if [ x"$my_traps" = x'-' ]
+	then	Push -c my_traps ${1+"$@"}
 		trap MyTrap EXIT HUP INT TERM
-	else	Push my_traps "$@"
+	else	Push my_traps ${1+"$@"}
 	fi
 }
 
@@ -197,7 +197,7 @@ MkTemp() {
 	fi
 	if [ -z "${have_random:++}" ]
 	then	r=${RANDOM-}
-		if [ "$r" = "${RANDOM-}" ] && [ "$r" = "${RANDOM-}" ]
+		if [ x"$r" = x"${RANDOM-}" ] && [ x"$r" = x"${RANDOM-}" ]
 		then	have_random=false
 			r=`od -d -N2 /dev/random 2>/dev/null` || r=
 			r=`printf '%s' $r`
@@ -268,11 +268,11 @@ then	remoteuse=$1
 	Push sudoargs "-u" "$remoteuse"
 fi
 command -v id >/dev/null 2>&1 || Fatal 'Cannot find id'
-if [ "`id -un`" = "$remoteuse" ]
+if [ x"`id -un`" = x"$remoteuse" ]
 then	Warning "Warning: remote user is the current user. Probably this
 is a mistake - therefore, no X authorization data is modified.
 "
-	DoExec "$@"
+	DoExec ${1+"$@"}
 fi
 
 $force || [ -z "${STY:++}${TMUX:++}" ] || \
@@ -288,7 +288,8 @@ Use option -f if you are willing to take the risk. Exiting for now.'
 Push -c displays
 
 CalcTransfer() {
-	eval "set -- $displays"
+	eval "set -- a $displays"
+	shift
 	for a
 	do	b=`xauth -q nlist "$a"` && [ -n "${b:++}" ] && \
 			Push transfer "$b"
@@ -302,11 +303,11 @@ then	# Generate list of all displays to transfer
 	if [ -n "${DISPLAY:++}" ]
 	then	Push displays "$DISPLAY"
 		dispnum=${DISPLAY##*:}
-		if [ "$dispnum" != "$DISPLAY" ]
+		if [ x"$dispnum" != x"$DISPLAY" ]
 		then	disphost=${DISPLAY%:*}
 			if [ -n "${disphost:++}" ]
 			then	Push -c displays "$disphost/unix:$dispnum"
-				if [ "$disphost" = 'localhost' ]
+				if [ x"$disphost" = x'localhost' ]
 				then	[ -z "${HOSTNAME:++}" ] && HOSTNAME=`hostname`
 					Push -c displays "$HOSTNAME:$dispnum" "$HOSTNAME/unix:$dispnum"
 				fi
@@ -316,7 +317,7 @@ then	# Generate list of all displays to transfer
 
 	# Generate authorization data in $transfer
 	if [ -n "${untrusted:++}" ]
-	then	if [ "$untrusted" = '1' ] && [ -n "${DISPLAY:++}" ]
+	then	if [ x"$untrusted" = x'1' ] && [ -n "${DISPLAY:++}" ]
 		then	MkTemp
 			a=$tmpdir/untrusted
 			:>"$a" || Fatal "cannot create $a"
@@ -361,7 +362,7 @@ then	ttyvalue=`tty` && [ -n "${ttyvalue:++}" ] && \
 			|| Fatal "User $remoteuse has no group"
 	# If we change TO root, we change the tty permissions on the remote side:
 	# This way, we need one call less to sudo.
-	if [ "$remoteuse" != 'root' ] || $noshell
+	if [ x"$remoteuse" != x'root' ] || $noshell
 	then
 		MyChown "$remoteuse:$remotegroup"
 	else	changeto=$remoteuse:$remotegroup
@@ -386,7 +387,7 @@ ResetTty() {
 	id=`id -g`
 	MyChown "$oriuser:$id"
 }
-[ "$chownpts" = '1' ] && AddTrap 'ResetTty'
+[ x"$chownpts" = x'1' ] && AddTrap 'ResetTty'
 
 # Generate remote command:
 
@@ -394,8 +395,9 @@ GenRemote() {
 	Push sudoargs '--'
 	$nox && $noshell && [ -z "${ttyvalue:++}" ] && return
 	Push sudoargs "$1"
-	eval "set -- $displays"
-	Push sudoargs '-remotecall' "$SHELL" "$@" '-dispend;'
+	eval "set -- a $displays"
+	shift
+	Push sudoargs '-remotecall' "$SHELL" ${1+"$@"} '-dispend;'
 	Push sudoargs "$socket"
 	if [ -n "${changeto:++}" ]
 	then	Push sudoargs "$chownprg" "$ttyvalue" "$changeto"
@@ -422,8 +424,9 @@ then	for screenprg in $screen
 	[ -z "${screen:++}" ] || Fatal 'tmux/screen not found'
 fi
 
-Push sudoargs "$@"
-eval "set -- $sudoargs"
+Push sudoargs ${1+"$@"}
+eval "set -- a $sudoargs"
+shift
 
 # Fill socket:
 
@@ -431,14 +434,14 @@ if [ -n "${socket:++}" ]
 then	{
 		printf '%s\n%s' "${#transfer}" "$transfer" >"$socket"
 		RmTemp
-		[ "$chownpts" = '1' ] || ClearMyTraps
+		[ x"$chownpts" = x'1' ] || ClearMyTraps
 	} &
 fi
 
-if [ "$my_traps" = '-' ]
-then	exec sudo "$@"
+if [ x"$my_traps" = x'-' ]
+then	exec sudo ${1+"$@"}
 	Fatal 'cannot exec sudo'
 fi
-sudo "$@"
+sudo ${1+"$@"}
 retvalue=$?
 exit $retvalue
