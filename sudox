@@ -190,8 +190,8 @@ MkTemp() {
 	[ -n "${tmpdir:++}" ] && return
 	AddTrap RmTemp
 	if command -v mktemp >/dev/null 2>&1
-	then	tmpdir=`mktemp -d "/tmp/${0##*/}.XXXXXXXX"` && \
-			[ -n "${tmpdir:++}" ] && return
+	then	tmpdir=`umask 077 && mktemp -d -- "${TMPDIR:-/tmp}/${0##*/}.XXXXXXXX"` \
+			&& [ -n "${tmpdir:++}" ] && test -d "$tmpdir" && return
 		ErrMessage 'cannot create temporary directory'
 		return 2
 	fi
@@ -219,8 +219,8 @@ MkTemp() {
 				r=$(( $r % 32768 ))
 			fi
 		fi
-		t=/tmp/${0##*/}.$$$c$r
-		mkdir -m 700 "$t" && tmpdir=$t && return
+		t=${TMPDIR:-}/tmp/${0##*/}.$$$c$r
+		mkdir -m 700 -- "$t" && tmpdir=$t && return
 		c=$(( $c + 1 ))
 	done
 	ErrMessage 'cannot create temporary directory'
