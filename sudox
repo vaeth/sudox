@@ -73,18 +73,18 @@ Troyan() {
 }
 
 ReadTransfer() {
-	read -r count || Troyan "unreadable socket"
+	read -r count || Troyan 'unreadable socket'
 	(	unset LC_ALL
 		LC_COLLATE=C
 		case ${count:-x} in
 		*[!0-9]*)	false;;
 		esac
-	) || Troyan "corruption with socket"
+	) || Troyan 'corruption with socket'
 	if [ "$count" -gt 0 ]
 	then	transfer=`dd bs="$count" count=1 2>/dev/null && echo x` || \
 			Troyan 'corruption with socket'
 		transfer=${transfer%x}
-		[ $count -eq ${#transfer} ] || Troyan "corruption with socket"
+		[ $count -eq ${#transfer} ] || Troyan 'corruption with socket'
 	fi
 }
 
@@ -351,8 +351,8 @@ if [ -n "${chownpts:++}" ]
 then	ttyvalue=`tty` && [ -n "${ttyvalue:++}" ] && \
 	if command -v readlink >/dev/null 2>&1
 	then	ttyvalue=`readlink -f -- "$ttyvalue"` && \
-		[ -n "${ttyvalue:++}" ]
-	fi && test -r "$ttyvalue" || Fatal 'could not determine tty'
+		[ -n "${ttyvalue:++}" ] && ! test -h "$ttyvalue"
+	fi && test -c "$ttyvalue" || Fatal 'cannot determine tty'
 	oriuser=`id -u`
 	chownprg=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
 		command -v chown 2>/dev/null` && \
