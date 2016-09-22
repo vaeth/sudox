@@ -1,5 +1,9 @@
 # ChangeLog for sudox:
 
+*sudox-4.0.1:
+	Martin Väth <martin at mvath.de>:
+	- Fix help
+
 *sudox-4.0:
 	Martin Väth <martin at mvath.de>:
 	- "script" is used to open a new tty, simultaneously avoiding security

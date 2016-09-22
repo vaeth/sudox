@@ -122,7 +122,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Usage() {
-	Echo "Usage: ${0##/} [options] [user [command]]
+	Echo "Usage: ${0##*/} [options] [user [command]]
 Similar to sudo -H -u user -s -- but transfer also X authority data.
 Most options are passed to sudo, essentially with the following exceptions:
 -l Clear STY/TMUX for the command/session (mnemonic: login environment)
