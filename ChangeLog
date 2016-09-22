@@ -1,0 +1,21 @@
+# ChangeLog for sudox:
+
+*sudox-4.0:
+	Martin Väth <martin at mvath.de>:
+	- "script" is used to open a new tty, simultaneously avoiding security
+	  risks and problems with screen/tmux
+	- The hacks with tty permissions (options -y and -Y) are thus unneeded
+	- The test for STY/TMUX (and override option -f) is also unneeded now
+	- The new option -l (currently identical to -e) unsets STY/TMUX
+	- The new option -T prevents using "script", and combined with -x
+	  substitutes the previous option -X which has thus been dropped.
+	  A warning has been added to this option, because using this option
+	  without changing tty permission or STY/TMUX checks is dangerous
+	  if the tty is used in the session. However, it is better to leave
+	  this responsibility to the user than to do unreliable hacks/checks.
+	- By default, if SUDO_ASKPASS is set, -A is passed to sudo
+	- The new option -p avoids the new magic -A passing
+	- A duplicate removal of a temp dir has been fixed (security fix)
+	- "CMD <file" might start CMD in a subshell (e.g. in Bourne shells).
+	  The code works now whether this is the case or not
+	- The option -V now prints the version of sudox, not of sudo
