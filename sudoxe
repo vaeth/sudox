@@ -1,0 +1,15 @@
+#!/bin/sh - this line is only for editors. This script _must_ be sourced
+# We use ${PATH-} for comtability with set -u
+sudox() {
+PATH=/sbin:/bin:/usr/sbin:/usr/bin${PATH:+:}${PATH-} command sudox ${1+"$@"}
+}
+
+# Some shells like zsh would "exec" a shell function, others only the binary.
+# To deal with both cases, we unset the shell function to avoid possibly
+# modifying PATH twice.
+sudoxe() {
+sudox -e '' sudoxe && {
+unset -f sudox >/dev/null 2>&1
+PATH=/sbin:/bin:/usr/sbin:/usr/bin${PATH:+:}${PATH-} exec sudox ${1+"$@"}
+}
+}

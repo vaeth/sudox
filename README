@@ -5,14 +5,29 @@ sudox is a POSIX shell script which acts as a wrapper for
 sudo -Hs with passing X authority data to the client.
 
 It is possible to create temporary untrusted X permissions.
-Also some support for screen and tmux is provided.
+Also some support for tty handling (e.g. screen and tmux) is provided.
 
 For more details, see the output of sudox -h
 
-For installation, copy sudox with executable permission in your path.
-To obtain support for zsh completion, you can copy _sudox to a
-directory of zsh's $fpath
+If you want to change the user for the remainder of the whole shell session
+and are somewhat paranoic to do this by accident from a runnnig
+screen or tmux session, you can use "sudoxe" in place of sudox:
+This is essentially "exec sudox", but checks your environment first.
+Be aware that when using sudoxe (or "exec sudox") and sudo asks for a
+password, a wrong password will terminate your session anyway.
+(Please let me know if you know a trick how to avoid this problem...)
 
-You also need push.sh from https://github.com/vaeth/push in your path.
+For installation, copy sudox and sudoxe to your $PATH and add the line
+
+. sudoxe
+
+to your shell startup file to define the shell functions sudox() and sudoxe()
+(sudox() calls sudox with a secure PATH setting). Alternatively, add these
+functions or modifications thereof directly to your shell startup file.
+
+To obtain support for zsh completion, you can copy _sudox to a directory
+of zsh's $fpath
+
+You will need push.sh from https://github.com/vaeth/push in your path.
 
 For Gentoo, there is an ebuild in the mv overlay (available by layman).

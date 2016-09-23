@@ -1,5 +1,12 @@
 # ChangeLog for sudox:
 
+*sudox-4.1.0:
+	Martin Väth <martin at mvath.de>:
+	- Provide sudoxe, see README
+	- Use -e now to check for active tmux/screen environment
+	- Special mode for empty user to make sudoxe implementation easy
+	- Avoid LC_COLLATE hack
+
 *sudox-4.0.1:
 	Martin Väth <martin at mvath.de>:
 	- Fix help

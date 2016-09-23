@@ -1,21 +1,29 @@
-#compdef sudox
-_arguments -s -S -A '-*' : \
-'-'{l,e}'[Clear TMUX/STY from environment]' \
-'-p[Ignore ASKPASS]' \
+#compdef sudox sudoxe
+local opts
+opts=()
+case $service in
+(*sudox)
+	opts=(
+'-l[Clear TMUX/STY]'
+'-e[Check for clear TMUX/STY environment]'
+);;
+esac
+_arguments -s -S -A '-*' : $opts \
 '-s[Start a tmux/screen session]' \
 '-S[Start a screen/tmux session]' \
-'-H[sudo --set-home (default)]' \
 '-T[Do not call script - danger when interactive]' \
 '-x[Do not transfer any X authority data]' \
 '-u[Generate only an untrusted permission]' \
 '-t+[Time valid for untrusted permission]:time:(0)' \
 '-U[Delete X remote authority similar to -ut1]' \
+'-p[Ignore ASKPASS]' \
+'-A[sudo --askpass]' \
 '-k[sudo --reset-timestamp]' \
 '-K[sudo --remove-timestamp]' \
 '-b[sudo --background]' \
 '-E[sudo --preserve-env]' \
 '-P[sudo --preserve-groups]' \
-'-A[sudo --askpass]' \
+'-H[sudo --set-home (default)]' \
 '-i[sudo --login]' \
 '-n[sudo --non-interactive]' \
 '-a+[sudo specify type]:type:()' \

@@ -27,11 +27,6 @@ SHELL_OPTS=
 # The actual authorization data is not passed as an arg but via the fifo.
 # First, some helper functions needed for both parts of the script:
 
-Version() {
-	Echo 'sudox 4.0'
-	exit 0
-}
-
 Echo() {
 	printf '%s\n' "$*"
 }
@@ -77,13 +72,10 @@ Troyan() {
 
 ReadTransfer() {
 	read -r count || Troyan 'unreadable fifo'
-	(	unset LC_ALL
-		LC_COLLATE=C
-		case ${count:-x} in
-		*[!0-9]*)
-			false;;
-		esac
-	) || Troyan 'corruption with fifo'
+	case ${count:-x} in
+	*[!0123456789]*)
+		Troyan 'corruption with fifo';;
+	esac
 	if [ "$count" -gt 0 ]
 	then	transfer=`dd bs="$count" count=1 2>/dev/null && echo x` || \
 			Troyan 'corruption with fifo'
@@ -121,12 +113,17 @@ fi
 
 # Now the main part of the script (i.e. the "server" side called by the user):
 
+Version() {
+	Echo 'sudox 4.1.0'
+	exit 0
+}
+
 Usage() {
 	Echo "Usage: ${0##*/} [options] [user [command]]
 Similar to sudo -H -u user -s -- but transfer also X authority data.
 Most options are passed to sudo, essentially with the following exceptions:
 -l Clear STY/TMUX for the command/session (mnemonic: login environment)
--e Currently identical to -l; this might change in future releases
+-e Work only if not in a screen/tmux environment (STY/TMUX)
 -p Without this option, -A is passed to sudo when SUDO_ASKPASS is set
 -T Do not call \"script\" to open a new tty; security risk if interactive.
    If -xT are used but not -s/-S, then act similar to sudo -H -u user --
@@ -140,7 +137,10 @@ Most options are passed to sudo, essentially with the following exceptions:
    The value 0 (default) means: forever
 -U Delete all X authority data on the remote side - similar to -u -t 1
 -V Print version
--h Print this help"
+-h Print this help
+If the specified user is empty, nothing is done (succesfully), so that
+sudox -e '' can be used to only check the environment. In that case a
+second argument (if provided) is used for the program name for -e failure"
 	exit ${1:-1}
 }
 
@@ -217,12 +217,14 @@ timeout=0
 nox=false
 screen=
 script=:
-clear=false
+checkenv=false
+loginenv=false
 Push -c sudoargs
 OPTIND=1
 while getopts "leTUut:xHsSyYh?Va:c:g:r:inkKbPAE" opt
 do	case $opt in
-	l|e)	clear=:;;
+	l)	loginenv=:;;
+	e)	checkenv=:;;
 	p)	askpass=false;;
 	T)	script=false;;
 	U)	untrusted=2;;
@@ -241,19 +243,35 @@ do	case $opt in
 done
 shift $(( $OPTIND - 1 ))
 
+# Check/modify environment first
+
+if $checkenv && [ -n "${STY++}${TMUX++}" ]
+then	if [ $# -eq 2 ] && [ -z "$1" ]
+	then	name=$2
+	else	name=${0##*/}
+	fi
+Fatal() {
+	MsgErr "$name: terminating: $*"
+	exit 1
+}
+	[ -z "${STY++}" ] || {
+		[ -z "${TMUX++}" ] || Fatal 'screen and tmux both seem to be running.'
+		Fatal 'screen seems to be running.'
+	}
+	Fatal 'tmux seems to be running.'
+fi
+! $loginenv || unset STY TMUX
+
 # Parse remainder
 
 Push sudoargs -H
 remoteuse=root
 if [ $# -gt 0 ]
 then	remoteuse=$1
+	[ -n "$remoteuse" ] || exit 0
 	shift
 	Push sudoargs "-u" "$remoteuse"
 fi
-
-# clear STY/TMUX
-
-! $clear || unset STY TMUX
 
 # Check whether we want to change to the current user
 
@@ -383,19 +401,20 @@ fi
 eval "set -- a $sudoargs"
 shift
 
-# Fill fifo:
-
-if [ -n "${fifo:++}" ]
-then	{
-		printf '%s\n%s' "${#transfer}" "$transfer" >"$fifo"
-		RmTemp
-	} &
-fi
-
-if [ -z "$tmpdir" ]
+if [ -z "${transfer:++}" ]
 then	exec sudo ${1+"$@"}
 	Fatal 'cannot exec sudo'
 fi
+
+# The fifo case:
+
+# Fill fifo:
+
+{
+	printf '%s\n%s' "${#transfer}" "$transfer" >"$fifo"
+	RmTemp
+} &
+
 # Clearing the trap is a race, but in the worst case we leave tmpdir.
 # This is better than removing tmpdir possibly twice (if it was already
 # done by the background job): The latter might perhaps be exploited, since
