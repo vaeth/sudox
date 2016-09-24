@@ -1,5 +1,16 @@
 # ChangeLog for sudox:
 
+*sudox-5.0.0:
+	Martin Väth <martin at mvath.de>:
+	- Transfer DISPLAY even if restricted by sudo
+	- Support XAUTHORITY for transfer to root (or depending on -r -R):
+	  This makes it unnecessary to pass data through fifo
+	  (more secure, and the sudox process can terminate)
+	- Emit -- for sudo/screen calls only if necessary
+	- Act more reliable when destination user is current user
+	- Honour XAUTHORITY of calling side
+	- Free memory before forking
+
 *sudox-4.1.0:
 	Martin Väth <martin at mvath.de>:
 	- Provide sudoxe, see README

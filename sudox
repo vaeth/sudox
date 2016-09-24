@@ -20,8 +20,9 @@ SHELL_OPTS=
 # change in future versions).
 # Currently, the syntax for the remote side is as follows:
 #
-# "$0" '-remotecall' "$SHELL" display1 display2 ... '-dispend;' \
-#        'Name of fifo used to transfer data'|'' \
+# "$0" '-remotecall' "$SHELL" "$DISPLAY" \
+#        'Name of fifo used to transfer data'|'~$XAUTHORITY'|'' \
+#        display1 display2 ... '-dispend;' \
 #        command [args for command]
 #
 # The actual authorization data is not passed as an arg but via the fifo.
@@ -70,6 +71,10 @@ Troyan() {
 	Fatal "$1. Probably some Troyan running"
 }
 
+NonMatch() {
+	Fatal "$1. Client and server versions do not match"
+}
+
 ReadTransfer() {
 	read -r count || Troyan 'unreadable fifo'
 	case ${count:-x} in
@@ -86,27 +91,46 @@ ReadTransfer() {
 	:
 }
 
-ParseSocket() {
-	[ -z "${1:++}" ] && return
+ParseFifo() {
 	test -p "$1" || Troyan "no fifo $1"
+	# || exit, because redirection might start a subshell
 	ReadTransfer <"$1" || exit
 }
 
 if [ x"${1-}" = x'-remotecall' ]
 then	shift
+	[ $# -ge 4 ] || NonMatch 'not enough remote arguments'
 	SHELL=$1
-	[ -n "$SHELL" ] && export SHELL
-	shift
-	while [ $# -gt 0 ]
-	do	if [ x"${1-}" = x'-dispend;' ]
-		then	shift
-			break
-		fi
-		xauth -q remove "$1" >/dev/null 2>&1
+	[ -z "${SHELL:++}" ] || export SHELL
+	[ -z "${2:++}" ] || {
+		DISPLAY=$2
+		export DISPLAY
+	}
+	if [ -n "${XAUTHORITY++}" ]
+	then	xauthority=$XAUTHORITY
+		unset XAUTHORITY
+	else	unset xauthority
+	fi
+	fifo=
+	[ -z "$3" ] || case $3 in
+	'~'*)
+		xauthority=${3#?};;
+	*)
+		unset xauthority
+		fifo=$3;;
+	esac
+	shift 3
+	while [ x"$1" != x'-dispend;' ]
+	do	xauth -q remove "$1" >/dev/null 2>&1
 		shift
+		[ $# -gt 0 ] || NonMatch 'no "-dispend;"'
 	done
-	ParseSocket "$1"
 	shift
+	[ -z "${fifo:++}" ] || ParseFifo "$fifo"
+	[ -z "${xauthority++}" ] || {
+		XAUTHORITY=$xauthority
+		export XAUTHORITY
+	}
 	SUDO_COMMAND=${*-}
 	DoExec ${1+"$@"}
 fi
@@ -114,7 +138,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 4.1.0'
+	Echo 'sudox 5.0.0'
 	exit 0
 }
 
@@ -126,16 +150,24 @@ Most options are passed to sudo, essentially with the following exceptions:
 -e Work only if not in a screen/tmux environment (STY/TMUX)
 -p Without this option, -A is passed to sudo when SUDO_ASKPASS is set
 -T Do not call \"script\" to open a new tty; security risk if interactive.
-   If -xT are used but not -s/-S, then act similar to sudo -H -u user --
+   If -xT are used but not -s/-S/-U, then act similar to sudo -H -u user --
    This is useful if special entries in /etc/sudoers should be prepared.
 -s Start a tmux (fallback to screen) session
 -S Start a screen (fallback to tmux) session
--x Do not transfer any X authority data
+-x Do not transfer any X authority data. If this option is used, -u is ignored
 -u Generate only an untrusted permission. (This requires that your xorg-server
-   was compiled with --enable-xcsecurity.) You might combine this with:
+   was compiled with --enable-xcsecurity.) This option implies -R
 -t TIMEOUT (in seconds). Time for which the untrusted permission is valid.
    The value 0 (default) means: forever
--U Delete all X authority data on the remote side - similar to -u -t 1
+   This option is ignored without -u
+-U Delete all related X authority data of the new user (similar to -ut1).
+   If combined with -r, the new user might have access to X anyway
+-r Assume that XAUTHORITY (defaults to ~/.Xauthority) is readable by the
+   destination user and transfer XAUTHORITY for X cookies.
+   This makes it unnecessary to pass cookies through a fifo
+   (more secure and the sudox process can terminate).
+   This is the default without -u if user is root
+-R Cancel -r, even if user is root. This is the default with -u
 -V Print version
 -h Print this help
 If the specified user is empty, nothing is done (succesfully), so that
@@ -158,17 +190,13 @@ MyTrap() {
 	exit $retvalue
 }
 
-SetTrap() {
-	trap MyTrap EXIT HUP INT TERM
-}
-
 ClearTrap() {
 	trap - EXIT HUP INT TERM
 }
 
 MkTemp() {
 	[ -n "${tmpdir:++}" ] && return
-	SetTrap
+	trap MyTrap EXIT HUP INT TERM
 	if command -v mktemp >/dev/null 2>&1
 	then	tmpdir=`umask 077 && mktemp -d -- "${TMPDIR:-/tmp}/${0##*/}.XXXXXXXX"` \
 			&& [ -n "${tmpdir:++}" ] && test -d "$tmpdir" && return
@@ -212,25 +240,29 @@ MkTemp() {
 # Parse options
 
 askpass=:
-untrusted=
+untrusted=false
+deletex=false
 timeout=0
-nox=false
+xtransfer=:
 screen=
 script=:
 checkenv=false
 loginenv=false
+rootmode=
 Push -c sudoargs
 OPTIND=1
-while getopts "leTUut:xHsSyYh?Va:c:g:r:inkKbPAE" opt
+while getopts "leTUut:xHrRsSyYh?Va:c:g:r:inkKbPAE" opt
 do	case $opt in
 	l)	loginenv=:;;
 	e)	checkenv=:;;
 	p)	askpass=false;;
-	T)	script=false;;
-	U)	untrusted=2;;
-	u)	untrusted=1;;
+	T)	script=;;
+	U)	deletex=:;;
+	u)	untrusted=:;;
 	t)	timeout=$OPTARG;;
-	x)	nox=:;;
+	x)	xtransfer=false;;
+	r)	rootmode=:;;
+	R)	rootmode=false;;
 	s)	screen='tmux screen';;
 	S)	screen='screen tmux';;
 	H)	:;;
@@ -273,14 +305,70 @@ then	remoteuse=$1
 	Push sudoargs "-u" "$remoteuse"
 fi
 
+# Implicit option dependencies
+
+$xtransfer || untrusted=false
+! $untrusted || rootmode=false
+[ -n "$rootmode" ] || if [ "$remoteuse" = 'root' ]
+then	rootmode=:
+else	rootmode=false
+fi
+
+# Calculate/check correct screen program, possibly unsetting environment
+
+if [ -n "${screen:++}" ]
+then	for screenprg in $screen
+	do	if screen=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
+command -v "$screenprg" 2>/dev/null` && [ -n "${screen:++}" ]
+		then	case $screenprg in
+			screen)
+				unset STY;;
+			tmux)
+				unset TMUX;;
+			esac
+			break
+		else	screen=
+		fi
+	done
+	[ -z "${screen:++}" ] || Fatal 'tmux/screen not found'
+fi
+
+HasDash() {
+	for dashtest
+	do	case $dashtest in
+		-*)
+			return 0;;
+		esac
+	done
+	return 1
+}
+
+if HasDash ${1+"$@"}
+then	dash=--
+else	dash=
+fi
+
 # Check whether we want to change to the current user
 
 currid=`id -un` && [ -n "$currid" ] || Fatal 'cannot get id'
 if [ x"$currid" = x"$remoteuse" ]
-then	Warning 'warning: remote user is the current user.
-Assuming that this is a mistake: not modifying X authorization data
-'
+then	msg=
+	! $deletex || msg='. ignoring -U'
+	! $untrusted || if [ -n "$msg" ]
+	then	msg=$msg' -u'
+	else	msg='. ignoring -u'
+	fi
+	[ -z "$script" ] || msg=$msg'. forcing -T'
+	[ -z "$msg" ] || Warning "warning: remote user is the current user$msg"
+	[ -z "${screen:++}" ] || DoExec "$screen" $dash ${1+"$@"}
 	DoExec ${1+"$@"}
+fi
+
+# Calculate $script path
+
+if [ -n "$script" ]
+then	script=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
+command -v script 2>/dev/null` && [ -n "$script" ] || Fatal '"script" not found'
 fi
 
 # Check for SUDO_ASKPASS
@@ -290,8 +378,9 @@ fi
 # Generate remote command and data to transfer
 
 Push -c displays
+Push -c transfer
 
-CalcTransfer() {
+CalcTransferAll() {
 	eval "set -- a $displays"
 	shift
 	for a
@@ -300,48 +389,45 @@ CalcTransfer() {
 	done
 }
 
-Push -c transfer
-Push -c displays
-if ! $nox
-then	# Generate list of all displays to transfer
-	if [ -n "${DISPLAY:++}" ]
-	then	Push displays "$DISPLAY"
-		dispnum=${DISPLAY##*:}
-		if [ x"$dispnum" != x"$DISPLAY" ]
-		then	disphost=${DISPLAY%:*}
-			if [ -n "${disphost:++}" ]
-			then	Push -c displays "$disphost/unix:$dispnum"
-				if [ x"$disphost" = x'localhost' ]
-				then	[ -z "${HOSTNAME:++}" ] && HOSTNAME=`hostname`
-					Push -c displays "$HOSTNAME:$dispnum" "$HOSTNAME/unix:$dispnum"
-				fi
-			fi
-		fi
-	fi
-
-	# Generate authorization data in $transfer
-	if [ -n "${untrusted:++}" ]
-	then	if [ x"$untrusted" = x'1' ] && [ -n "${DISPLAY:++}" ]
-		then	MkTemp || exit
-			a=$tmpdir/untrusted
-			(
-				umask 077 && : >"$a"
-			) || Fatal "cannot create $a"
-			xauth -q -f "$a" generate "$DISPLAY" . untrusted \
-				timeout "$timeout" || Fatal \
-'failed to create untrusted permissions.
+CalcTransferUntrusted() {
+	[ -n "${DISPLAY:++}" ] || return 0
+	MkTemp || exit
+	a=$tmpdir/untrusted
+	(
+		umask 077 && : >"$a"
+	) || Fatal "cannot create $a"
+	xauth -q -f "$a" generate "$DISPLAY" . untrusted timeout "$timeout" \
+		|| Fatal 'failed to create untrusted permissions.
 Perhaps your xorg-server was compiled without --enable-xcsecurity'
-			b=`xauth -f "$a" nlist "$DISPLAY"` \
-			&& [ -n "${b:++}" ] || Fatal \
-'failed to source data with untrusted permission'
-			rm -- "$a"
-			Push transfer "$b"
-		fi
-	else	CalcTransfer
-	fi
+	b=`xauth -f "$a" nlist "$DISPLAY"` && [ -n "${b:++}" ] \
+		|| Fatal 'failed to source data with untrusted permission'
+	rm -- "$a"
+	Push transfer "$b"
+}
 
-	# Do not inherit .Xauthority file:
-	unset XAUTHORITY
+CalcDisplays() {
+	[ -n "${DISPLAY:++}" ] || return 0
+	Push -c displays "$DISPLAY"
+	dispnum=${DISPLAY##*:}
+	[ x"$dispnum" != x"$DISPLAY" ] || return 0
+	disphost=${DISPLAY%:*}
+	if [ -n "${disphost:++}" ]
+	then	Push -c displays "$disphost/unix:$dispnum"
+		if [ x"$disphost" = x'localhost' ]
+		then	HOSTNAME=`hostname 2>/dev/null`
+			Push -c displays "$HOSTNAME:$dispnum" "$HOSTNAME/unix:$dispnum"
+		fi
+	fi
+}
+
+if $untrusted
+then	CalcDisplays
+	CalcTransferUntrusted
+elif $deletex
+then	CalcDisplays
+elif $xtransfer && ! $rootmode
+then	CalcDisplays
+	CalcTransferAll
 fi
 
 # Generate fifo
@@ -357,46 +443,46 @@ fi
 
 # Generate remote command:
 
+# This must be a function, because we use set --
 GenRemote() {
-	Push sudoargs '--'
-	! $nox || return 0
-	Push sudoargs "$1"
+	if ! $xtransfer && ! $deletex
+	then	if [ -n "${dash:++}" ] || HasDash "$script" "$screen"
+		then	Push sudoargs --
+		fi
+		return
+	fi
+	Push sudoargs --
+	Push sudoargs "$0"
+	fifoarg=
+	if [ -n "${fifo:++}" ]
+	then	fifoarg=$fifo
+	elif $xtransfer && $rootmode
+	then	fifoarg='~'${XAUTHORITY:-"$HOME/.Xauthority"}
+	fi
+	disparg=
+	! $xtransfer || disparg=${DISPLAY-}
 	eval "set -- a $displays"
 	shift
-	Push sudoargs '-remotecall' "${SHELL:-sh}" ${1+"$@"} '-dispend;'
-	Push sudoargs "$fifo"
+	Push sudoargs '-remotecall' "${SHELL:-sh}" \
+		"$disparg" "$fifoarg" ${1+"$@"} '-dispend;'
+	unset XAUTHORITY
 }
 GenRemote "$0"
 
-Push -c sudocmd
-if [ -n "${screen:++}" ]
-then	for screenprg in $screen
-	do	if screen=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
-		command -v "$screenprg" 2>/dev/null` && [ -n "${screen:++}" ]
-		then	case $screenprg in
-			screen)
-				unset STY;;
-			tmux)
-				unset TMUX;;
-			esac
-			if $script
-			then	Push sudocmd exec "$screen" '--'
-			else	Push sudoargs "$screen" '--'
-			fi
-			screen=
-			break
-		fi
-	done
-	[ -z "${screen:++}" ] || Fatal 'tmux/screen not found'
-fi
-if $script
-then	script=`export PATH='/bin:/sbin:/usr/bin:/usr/sbin'
-	command -v script 2>/dev/null` && [ -n "$script" ] \
+if [ -n "$script" ]
+then	script=`PATH='/bin:/sbin:/usr/bin:/usr/sbin' \
+command -v script 2>/dev/null` && [ -n "$script" ] \
 		|| Fatal '"script" not found'
-	Push sudocmd ${1+"$@"}
+	if [ -n "${screen:++}" ]
+	then	Push -c sudocmd exec "$screen" $dash ${1+"$@"}
+	else	Push -c sudocmd ${1+"$@"}
+	fi
 	Push sudoargs "$script" -q -e \
 		${sudocmd:+-c} ${sudocmd:+"$sudocmd"} /dev/null
-else	Push sudoargs ${1+"$@"}
+else	if [ -n "${screen:++}" ]
+	then	Push -c sudoargs "$screen" $dash ${1+"$@"}
+	else	Push -c sudoargs ${1+"$@"}
+	fi
 fi
 eval "set -- a $sudoargs"
 shift
@@ -406,10 +492,16 @@ then	exec sudo ${1+"$@"}
 	Fatal 'cannot exec sudo'
 fi
 
-# The fifo case:
+# Free memory:
+unset sudoargs sudocmd displays dash fifoarg disparg count have_random \
+askpass untrusted deletex timeout xtransfer screen script \
+checkenv loginenv rootmode
+unset -f Echo MsgErr Warning Fatal Push DoExec \
+AddAuthorities Troyan NonMatch ReadTransfer ParseFifo \
+Version Usage MkTemp HasDash \
+CalcTransferAll CalcTransferUntrusted CalcDisplays GenRemote 2>/dev/null
 
 # Fill fifo:
-
 {
 	printf '%s\n%s' "${#transfer}" "$transfer" >"$fifo"
 	RmTemp
