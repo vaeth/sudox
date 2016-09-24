@@ -17,7 +17,7 @@ Be aware that when using sudoxe (or "exec sudox") and sudo asks for a
 password, a wrong password will terminate your session anyway.
 (Please let me know if you know a trick how to avoid this problem...)
 
-For installation, copy sudox and sudoxe to your $PATH and add the line
+For installation, copy sudox bin/* to your $PATH and add the line
 
 . sudoxe
 
@@ -25,9 +25,13 @@ to your shell startup file to define the shell functions sudox() and sudoxe()
 (sudox() calls sudox with a secure PATH setting). Alternatively, add these
 functions or modifications thereof directly to your shell startup file.
 
-To obtain support for zsh completion, you can copy _sudox to a directory
+To obtain support for zsh completion, you can copy zsh/* to a directory
 of zsh's $fpath
 
 You will need push.sh from https://github.com/vaeth/push in your path.
+
+It is strongly recommended to copy sudoers.d/* to /etc/sudoers.d and to set
+appropriate permissions. If you do this, it is also strongly recommended to
+export the variables from env.d/* to your user's shell startup files.
 
 For Gentoo, there is an ebuild in the mv overlay (available by layman).

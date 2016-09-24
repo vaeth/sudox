@@ -9,27 +9,32 @@ case $service in
 );;
 esac
 _arguments -s -S -A '-*' : $opts \
+'-v+[Use specified VAR for data passing]:variable:(DISPLAY LANG SUDOX_OPT TERM)' \
+'-l[Clear STY/TMUX]' \
 '-s[Start a tmux/screen session]' \
 '-S[Start a screen/tmux session]' \
-'-T[Do not call script - danger when interactive]' \
-'-x[Do not transfer any X authority data]' \
-'-u[Generate only an untrusted permission]' \
-'-t+[Time valid for untrusted permission]:time:(0)' \
-'-U[Delete X remote authority similar to -ut1]' \
+'-e[Require empty STY/TMUX]' \
 '-p[Ignore ASKPASS]' \
+'-T[Do not call script - danger when interactive]' \
+'(-R -N)-u[Generate only an untrusted permission]' \
+'-t+[Use specified time for untrusted permission]:time:(0)' \
+'(-u -t)-U[Delete X remote authority similar to -ut1]' \
+'(-u -t)-x[Do not transfer any X authority data]' \
+'-R[Force root mode]' \
+'-N[Force non-root mode]' \
 '-A[sudo --askpass]' \
 '-k[sudo --reset-timestamp]' \
 '-K[sudo --remove-timestamp]' \
 '-b[sudo --background]' \
 '-E[sudo --preserve-env]' \
 '-P[sudo --preserve-groups]' \
-'-H[sudo --set-home (default)]' \
 '-i[sudo --login]' \
 '-n[sudo --non-interactive]' \
 '-a+[sudo specify type]:type:()' \
 '-c+[sudo specify class]:class:()' \
 '-g+[sudo specify group]:group:_groups' \
 '-r+[sudo specify rule]:rule:()' \
+'-H[sudo --set-home (default)]' \
 '(1 * -)-V[Print version]' \
 '(1 * -)-h[Print help]' \
 '1:user name:_users' \

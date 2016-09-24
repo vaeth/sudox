@@ -20,12 +20,15 @@ SHELL_OPTS=
 # change in future versions).
 # Currently, the syntax for the remote side is as follows:
 #
-# "$0" '-remotecall' "$SHELL" "$DISPLAY" \
-#        'Name of fifo used to transfer data'|'~$XAUTHORITY'|'' \
+# "$0" '-remotecall' \
+#        'Path to fifo'|'~XAUTHORITY'|'$VAR'|'' \
 #        display1 display2 ... '-dispend;' \
+#        "$SHELL" "$DISPLAY" \
 #        command [args for command]
 #
-# The actual authorization data is not passed as an arg but via the fifo.
+# The cookies are not passed as an arg but via the fifo, through VAR,
+# or by setting XAUTHORITY.
+
 # First, some helper functions needed for both parts of the script:
 
 Echo() {
@@ -57,6 +60,13 @@ DoExec() {
 		exec "${SHELL:-sh}" -c "$mycmd"
 	fi
 	Fatal "cannot execute ${SHELL:-sh}"
+}
+
+CheckVarname() {
+	case ${1:-/} in
+	[0123456789]*|*[!01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_]*)
+		Fatal "bad variable name $1";;
+	esac
 }
 
 # Now the remote part of the script:
@@ -97,40 +107,63 @@ ParseFifo() {
 	ReadTransfer <"$1" || exit
 }
 
+ParseVariable() {
+	CheckVarname "$1"
+	eval "var=\${$1}"
+	eval "AddAuthorities ${var%%sudox_magic_separator*}"
+	var=${var#*sudox_magic_separator}
+	case $var in
+	'+'*)
+		var=${var#?}
+		eval "$1=\$var"
+		return;;
+	esac
+	eval "unset $1"
+}
+
 if [ x"${1-}" = x'-remotecall' ]
 then	shift
-	[ $# -ge 4 ] || NonMatch 'not enough remote arguments'
-	SHELL=$1
-	[ -z "${SHELL:++}" ] || export SHELL
-	[ -z "${2:++}" ] || {
-		DISPLAY=$2
-		export DISPLAY
-	}
+	[ $# -ge 2 ] || NonMatch 'not enough remote arguments'
 	if [ -n "${XAUTHORITY++}" ]
 	then	xauthority=$XAUTHORITY
 		unset XAUTHORITY
 	else	unset xauthority
 	fi
+	var=
 	fifo=
-	[ -z "$3" ] || case $3 in
+	[ -z "$1" ] || case $1 in
 	'~'*)
-		xauthority=${3#?};;
+		xauthority=${1#?};;
+	'$'*)
+		var=${1#?};;
 	*)
 		unset xauthority
-		fifo=$3;;
+		fifo=$1;;
 	esac
-	shift 3
+	shift
 	while [ x"$1" != x'-dispend;' ]
 	do	xauth -q remove "$1" >/dev/null 2>&1
 		shift
 		[ $# -gt 0 ] || NonMatch 'no "-dispend;"'
 	done
 	shift
+	[ -z "${var:++}" ] || ParseVariable "$var"
 	[ -z "${fifo:++}" ] || ParseFifo "$fifo"
 	[ -z "${xauthority++}" ] || {
 		XAUTHORITY=$xauthority
 		export XAUTHORITY
 	}
+	[ $# -ge 2 ] || NonMatch 'not enough remote argument'
+	# Set SHELL and DISPLAY _after_ ParseVariable
+	# so that they can be used with -v
+	SHELL=$1
+	[ -z "${SHELL:++}" ] || export SHELL
+	shift
+	[ -z "${1:++}" ] || {
+		DISPLAY=$1
+		export DISPLAY
+	}
+	shift
 	SUDO_COMMAND=${*-}
 	DoExec ${1+"$@"}
 fi
@@ -138,36 +171,46 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 5.0.0'
+	Echo 'sudox 6.0.0'
 	exit 0
 }
 
 Usage() {
 	Echo "Usage: ${0##*/} [options] [user [command]]
 Similar to sudo -H -u user -s -- but transfer also X authority data.
+If the variable SUDOX_OPT is set, its options are used as default.
 Most options are passed to sudo, essentially with the following exceptions:
+-vVAR: Use VAR instead of a fifo to transfer information. This is more secure
+   and the sudox process can terminate early, but you have to configure sudo
+   to not reset the variable VAR. The previous content of VAR is kept.
+   When you can, configure sudo correspondingly and export SUDOX_OPT=-vVAR
+   in the shell startup file of all users.
+   Recommended choices for VAR: TERM, LANG, DISPLAY, or SUDOX_OPT.
+   A bad idea is XAUTHORITY or certain lowercase names: Such variables
+   are modified by sudox, and collission can lead to all sort of problems.
 -l Clear STY/TMUX for the command/session (mnemonic: login environment)
+-s Start a tmux (fallback to screen) session
+-S Start a screen (fallback to tmux) session
 -e Work only if not in a screen/tmux environment (STY/TMUX)
 -p Without this option, -A is passed to sudo when SUDO_ASKPASS is set
 -T Do not call \"script\" to open a new tty; security risk if interactive.
    If -xT are used but not -s/-S/-U, then act similar to sudo -H -u user --
    This is useful if special entries in /etc/sudoers should be prepared.
--s Start a tmux (fallback to screen) session
--S Start a screen (fallback to tmux) session
--x Do not transfer any X authority data. If this option is used, -u is ignored
 -u Generate only an untrusted permission. (This requires that your xorg-server
-   was compiled with --enable-xcsecurity.) This option implies -R
--t TIMEOUT (in seconds). Time for which the untrusted permission is valid.
+   was compiled with --enable-xcsecurity.) This option implies -N
+-tTIMEOUT (in seconds). Time for which the untrusted permission is valid.
    The value 0 (default) means: forever
    This option is ignored without -u
 -U Delete all related X authority data of the new user (similar to -ut1).
    If combined with -r, the new user might have access to X anyway
--r Assume that XAUTHORITY (defaults to ~/.Xauthority) is readable by the
-   destination user and transfer XAUTHORITY for X cookies.
-   This makes it unnecessary to pass cookies through a fifo
-   (more secure and the sudox process can terminate).
-   This is the default without -u if user is root
--R Cancel -r, even if user is root. This is the default with -u
+-x Do not transfer any X authority data. If this option is used, -u is ignored
+-R Use root mode: Assume that XAUTHORITY (defaults to ~/.Xauthority) is
+   readable by the destination user, and transfer XAUTHORITY for X cookies.
+   This makes it unnecessary to pass cookies through a fifo or variable
+   (more secure and the sudox process can terminate early).
+   This is the default if user is root and -u is not specified
+-N Use non-root mode. Cancel -R even for root.
+   This is the default if user is not root or -u is specified
 -V Print version
 -h Print this help
 If the specified user is empty, nothing is done (succesfully), so that
@@ -239,6 +282,7 @@ MkTemp() {
 
 # Parse options
 
+
 askpass=:
 untrusted=false
 deletex=false
@@ -249,31 +293,46 @@ script=:
 checkenv=false
 loginenv=false
 rootmode=
+variable=
 Push -c sudoargs
-OPTIND=1
-while getopts "leTUut:xHrRsSyYh?Va:c:g:r:inkKbPAE" opt
-do	case $opt in
-	l)	loginenv=:;;
-	e)	checkenv=:;;
-	p)	askpass=false;;
-	T)	script=;;
-	U)	deletex=:;;
-	u)	untrusted=:;;
-	t)	timeout=$OPTARG;;
-	x)	xtransfer=false;;
-	r)	rootmode=:;;
-	R)	rootmode=false;;
-	s)	screen='tmux screen';;
-	S)	screen='screen tmux';;
-	H)	:;;
-	V)	Version;;
-	[h?])	Usage;;
-	[acgpr])
-		Push sudoargs "-$opt" "$OPTARG";;
-	*)	Push sudoargs "-$opt";;
-	esac
-done
-shift $(( $OPTIND - 1 ))
+ReadOpt() {
+	OPTIND=1
+	while getopts "v:lsSepuTUt:xRNHVh?a:c:g:r:inkKbPAE" opt
+	do	case $opt in
+		v)	variable=$OPTARG
+			CheckVarname "$variable";;
+		l)	loginenv=:;;
+		s)	screen='tmux screen';;
+		S)	screen='screen tmux';;
+		e)	checkenv=:;;
+		p)	askpass=false;;
+		T)	script=;;
+		u)	untrusted=:;;
+		t)	timeout=$OPTARG;;
+		U)	deletex=:;;
+		x)	xtransfer=false;;
+		R)	rootmode=:;;
+		N)	rootmode=false;;
+		H)	:;;
+		V)	Version;;
+		[h?])	Usage;;
+		[acgr])
+			Push sudoargs "-$opt" "$OPTARG";;
+		*)	Push sudoargs "-$opt";;
+		esac
+	done
+	optind=$OPTIND
+	$sudox_opt || return 0
+	shift $(( $optind - 1 ))
+	[ $# -eq 0 ] || Fatal 'SUDOX_OPT must only contain options'
+}
+[ -z "${SUDOX_OPT:++}" ] || {
+	sudox_opt=:
+	ReadOpt $SUDOX_OPT
+}
+sudox_opt=false
+ReadOpt ${1+"$@"}
+shift $(( $optind - 1 ))
 
 # Check/modify environment first
 
@@ -431,7 +490,7 @@ then	CalcDisplays
 fi
 
 # Generate fifo
-if [ -z "${transfer:++}" ]
+if [ -z "${transfer:++}" ] || [ -n "$variable" ]
 then	fifo=
 	RmTemp
 else	MkTemp
@@ -443,6 +502,11 @@ fi
 
 # Generate remote command:
 
+TransferVariable() {
+	eval "$1=\$transfer'sudox_magic_separator'\${${1}++}\${${1}-}
+	export $1"
+}
+
 # This must be a function, because we use set --
 GenRemote() {
 	if ! $xtransfer && ! $deletex
@@ -453,18 +517,25 @@ GenRemote() {
 	fi
 	Push sudoargs --
 	Push sudoargs "$0"
-	fifoarg=
-	if [ -n "${fifo:++}" ]
-	then	fifoarg=$fifo
-	elif $xtransfer && $rootmode
-	then	fifoarg='~'${XAUTHORITY:-"$HOME/.Xauthority"}
-	fi
+	# Store SHELL and DISPLAY _before_ TransferVariable,
+	# so that they can be used with -v
+	shellarg=${SHELL:-sh}
 	disparg=
 	! $xtransfer || disparg=${DISPLAY-}
+	transarg=
+	if [ -n "${transfer:++}" ]
+	then	if [ -n "${variable:++}" ]
+		then	TransferVariable "$variable"
+			transarg='$'$variable
+		else	transarg=$fifo
+		fi
+	elif $xtransfer && $rootmode
+	then	transarg='~'${XAUTHORITY:-"$HOME/.Xauthority"}
+	fi
 	eval "set -- a $displays"
 	shift
-	Push sudoargs '-remotecall' "${SHELL:-sh}" \
-		"$disparg" "$fifoarg" ${1+"$@"} '-dispend;'
+	Push sudoargs '-remotecall' "$transarg" \
+		${1+"$@"} '-dispend;' "$shellarg" "$disparg"
 	unset XAUTHORITY
 }
 GenRemote "$0"
@@ -487,19 +558,20 @@ fi
 eval "set -- a $sudoargs"
 shift
 
-if [ -z "${transfer:++}" ]
+if [ -z "${fifo:++}" ]
 then	exec sudo ${1+"$@"}
 	Fatal 'cannot exec sudo'
 fi
 
 # Free memory:
-unset sudoargs sudocmd displays dash fifoarg disparg count have_random \
+unset sudoargs sudocmd displays dash transarg disparg count have_random \
 askpass untrusted deletex timeout xtransfer screen script \
-checkenv loginenv rootmode
-unset -f Echo MsgErr Warning Fatal Push DoExec \
-AddAuthorities Troyan NonMatch ReadTransfer ParseFifo \
+checkenv loginenv rootmode variable
+unset -f Echo MsgErr Warning Fatal Push DoExec CheckVarname \
+AddAuthorities Troyan NonMatch ReadTransfer ParseFifo ParseVariable \
 Version Usage MkTemp HasDash \
-CalcTransferAll CalcTransferUntrusted CalcDisplays GenRemote 2>/dev/null
+CalcTransferAll CalcTransferUntrusted CalcDisplays \
+TransferVariable GenRemote 2>/dev/null
 
 # Fill fifo:
 {

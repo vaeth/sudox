@@ -1,11 +1,25 @@
 # ChangeLog for sudox:
 
+*sudox-6.0.0:
+	Martin Väth <martin at mvath.de>:
+	- New option -vVAR which allows passing cookies by variable VAR
+	  instead through a fifo. This is a big security enhancement
+	  (and the sudox process can terminate earlier).
+	  Use this if you can configure sudo to pass VAR.
+	  Good choices for VAR are DISPLAY or SUDOX_OPT.
+	  To make using this option easier, there is the new
+	- SUDOX_OPT: This variable can contain default options.
+	- Rename options for root/non-root mode into -R/-N,
+	  because -r is already used by sudo
+	- Some options had not been accepted due to a typo
+	- Fix zsh completion: Add missing options and dependencies
+
 *sudox-5.0.0:
 	Martin Väth <martin at mvath.de>:
 	- Transfer DISPLAY even if restricted by sudo
 	- Support XAUTHORITY for transfer to root (or depending on -r -R):
 	  This makes it unnecessary to pass data through fifo
-	  (more secure, and the sudox process can terminate)
+	  (more secure, and the sudox process can terminate ealier)
 	- Emit -- for sudo/screen calls only if necessary
 	- Act more reliable when destination user is current user
 	- Honour XAUTHORITY of calling side
