@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # (C) Martin V\"ath <martin@mvath.de>
 set -u
 set -f
@@ -21,7 +21,7 @@ SHELL_OPTS=
 # Currently, the syntax for the remote side is as follows:
 #
 # "$0" '-remotecall' \
-#        'Path to fifo'|'~XAUTHORITY'|'$VAR'|'' \
+#        'Path to fifo'|'~'"$XAUTHORITY"|'$VAR'|'&FD'|'' \
 #        display1 display2 ... '-dispend;' \
 #        "$SHELL" "$DISPLAY" \
 #        command [args for command]
@@ -56,24 +56,32 @@ Push() {
 DoExec() {
 	if [ $# -eq 0 ]
 	then	exec "${SHELL:-sh}"
-	else	Push -c mycmd ${1+"$@"}
-		exec "${SHELL:-sh}" -c "$mycmd"
+	else	Push -c sx_mycmd ${1+"$@"}
+		exec "${SHELL:-sh}" -c "$sx_mycmd"
 	fi
 	Fatal "cannot execute ${SHELL:-sh}"
 }
 
+IsNumber() {
+	case ${1:-x} in
+	*[!0123456789]*)
+		return 1;;
+	esac
+	:
+}
+
 CheckVarname() {
 	case ${1:-/} in
-	[0123456789]*|*[!01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_]*)
-		Fatal "bad variable name $1";;
+	[0123456789]*|*[!01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_]*|sx_[abcdefghijklmnopqrstuvwxyz]*)
+		Fatal "bad variable name '$1'";;
 	esac
 }
 
 # Now the remote part of the script:
 
 AddAuthorities() {
-	for a
-	do	printf '%s' "$a" | xauth nmerge -
+	for sx_a
+	do	printf '%s' "$sx_a" | xauth nmerge -
 	done
 }
 
@@ -86,16 +94,13 @@ NonMatch() {
 }
 
 ReadTransfer() {
-	read -r count || Troyan 'unreadable fifo'
-	case ${count:-x} in
-	*[!0123456789]*)
-		Troyan 'corruption with fifo';;
-	esac
-	if [ "$count" -gt 0 ]
-	then	transfer=`dd bs="$count" count=1 2>/dev/null && echo x` || \
-			Troyan 'corruption with fifo'
+	read -r sx_a || Troyan 'unreadable stream'
+	IsNumber "$sx_a" || Troyan 'corruption with stream'
+	if [ "$sx_a" -gt 0 ]
+	then	transfer=`dd bs="$sx_a" count=1 2>/dev/null && echo x` || \
+			Troyan 'corruption with straem'
 		transfer=${transfer%x}
-		[ $count -eq ${#transfer} ] || Troyan 'corruption with fifo'
+		[ $sx_a -eq ${#transfer} ] || Troyan 'corruption with fifo'
 	fi
 	eval "AddAuthorities $transfer"
 	:
@@ -107,15 +112,24 @@ ParseFifo() {
 	ReadTransfer <"$1" || exit
 }
 
+ParsePipe() {
+	IsNumber "$1" || Troyan "not a filedescriptpr number '$1'"
+	# || exit, because redirection might start a subshell
+	eval 'ReadTransfer <&'"$1" || exit
+}
+
 ParseVariable() {
-	CheckVarname "$1"
-	eval "var=\${$1}"
-	eval "AddAuthorities ${var%%sudox_magic_separator*}"
-	var=${var#*sudox_magic_separator}
-	case $var in
+	[ "$1" = sx_oldxauthority ] || CheckVarname "$1"
+	eval "sx_var=\${$1}"
+	# Using Push would be cleaner than a magic separator, but it would
+	# require an eval of an environment variable which appears insecure
+	# (without being able to specify a particular attack scenario...)
+	eval "AddAuthorities ${sx_var%%sudox_magic_separator*}"
+	sx_var=${sx_var#*sudox_magic_separator}
+	case $sx_var in
 	'+'*)
-		var=${var#?}
-		eval "$1=\$var"
+		sx_var=${sx_var#?}
+		eval "$1=\$sx_var"
 		return;;
 	esac
 	eval "unset $1"
@@ -124,21 +138,23 @@ ParseVariable() {
 if [ x"${1-}" = x'-remotecall' ]
 then	shift
 	[ $# -ge 2 ] || NonMatch 'not enough remote arguments'
-	if [ -n "${XAUTHORITY++}" ]
-	then	xauthority=$XAUTHORITY
-		unset XAUTHORITY
-	else	unset xauthority
-	fi
-	var=
-	fifo=
+	sx_oldxauthority=${XAUTHORITY-}
+	unset XAUTHORITY
+	sx_xauthority=
+	sx_var=
+	sx_fifo=
+	sx_pipe=
 	[ -z "$1" ] || case $1 in
 	'~'*)
-		xauthority=${1#?};;
+		sx_xauthority=${1#?};;
+	'$XAUTHORITY')
+		sx_var=sx_oldxauthority;;
 	'$'*)
-		var=${1#?};;
+		sx_var=${1#?};;
+	'&'*)
+		sx_pipe=${1#?};;
 	*)
-		unset xauthority
-		fifo=$1;;
+		sx_fifo=$1;;
 	esac
 	shift
 	while [ x"$1" != x'-dispend;' ]
@@ -147,12 +163,16 @@ then	shift
 		[ $# -gt 0 ] || NonMatch 'no "-dispend;"'
 	done
 	shift
-	[ -z "${var:++}" ] || ParseVariable "$var"
-	[ -z "${fifo:++}" ] || ParseFifo "$fifo"
-	[ -z "${xauthority++}" ] || {
-		XAUTHORITY=$xauthority
+	if [ -n "${sx_var:++}" ]
+	then	ParseVariable "$sx_var"
+	elif [ -n "${sx_pipe:++}" ]
+	then	ParsePipe "$sx_pipe"
+	elif [ -n "${sx_fifo:++}" ]
+	then	ParseFifo "$sx_fifo"
+	elif [ -n "${sx_xauthority:++}" ]
+	then	XAUTHORITY=$sx_xauthority
 		export XAUTHORITY
-	}
+	fi
 	[ $# -ge 2 ] || NonMatch 'not enough remote argument'
 	# Set SHELL and DISPLAY _after_ ParseVariable
 	# so that they can be used with -v
@@ -171,7 +191,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 6.0.0'
+	Echo 'sudox 7.0.0'
 	exit 0
 }
 
@@ -179,15 +199,21 @@ Usage() {
 	Echo "Usage: ${0##*/} [options] [user [command]]
 Similar to sudo -H -u user -s -- but transfer also X authority data.
 If the variable SUDOX_OPT is set, its options are used as default.
-Most options are passed to sudo, essentially with the following exceptions:
--vVAR: Use VAR instead of a fifo to transfer information. This is more secure
-   and the sudox process can terminate early, but you have to configure sudo
-   to not reset the variable VAR. The previous content of VAR is kept.
-   When you can, configure sudo correspondingly and export SUDOX_OPT=-vVAR
-   in the shell startup file of all users.
-   Recommended choices for VAR: TERM, LANG, DISPLAY, or SUDOX_OPT.
-   A bad idea is XAUTHORITY or certain lowercase names: Such variables
-   are modified by sudox, and collission can lead to all sort of problems.
+Use this for a safe setting, see README.
+-vVAR  Use environment variable VAR instead of a FIFO to transfer cookies;
+   sudo must keep this variable in the enviroment. The original content of VAR
+   is preserved by sudox (it is even preserved if VAR is defined).
+   All names non magic to the shell (e.g. TERM, DISPLAY, XAUTHORITY, LANG)
+   are admissible with the exception of those matching sx_[a-z]*
+   Recommendation: export SUDOX_OPT=-vSUDOX_OPT if possible, see README
+-FFD[,FDa[,FDb]]  Use file descriptor FD (and auxiliary descriptors FDa, FDb)
+   to transfer cookies. The descriptor FD must not be closed by sudo. FDa and
+   FDb default to (FD + 1) and (FDa + 1), respectively. Typical usage: -F3 -C4
+-oSUDO_OPT  add SUDO_OPT to the list of options passed to sudo.
+   This option can be used repeatedly, all options being accumulated.
+   In addition to -o, the one-letter options -a, -C -c, -g, -r (each with arg)
+   and -A -b -E -i -K -k -n -P (each without arg) are directly passed to sudo
+-H is accepted but ignored since -H is passed to sudo anyway
 -l Clear STY/TMUX for the command/session (mnemonic: login environment)
 -s Start a tmux (fallback to screen) session
 -S Start a screen (fallback to tmux) session
@@ -198,7 +224,7 @@ Most options are passed to sudo, essentially with the following exceptions:
    This is useful if special entries in /etc/sudoers should be prepared.
 -u Generate only an untrusted permission. (This requires that your xorg-server
    was compiled with --enable-xcsecurity.) This option implies -N
--tTIMEOUT (in seconds). Time for which the untrusted permission is valid.
+-tTIMEOUT  (in seconds). Time for which the untrusted permission is valid.
    The value 0 (default) means: forever
    This option is ignored without -u
 -U Delete all related X authority data of the new user (similar to -ut1).
@@ -206,31 +232,29 @@ Most options are passed to sudo, essentially with the following exceptions:
 -x Do not transfer any X authority data. If this option is used, -u is ignored
 -R Use root mode: Assume that XAUTHORITY (defaults to ~/.Xauthority) is
    readable by the destination user, and transfer XAUTHORITY for X cookies.
-   This makes it unnecessary to pass cookies through a fifo or variable
-   (more secure and the sudox process can terminate early).
    This is the default if user is root and -u is not specified
 -N Use non-root mode. Cancel -R even for root.
    This is the default if user is not root or -u is specified
 -V Print version
 -h Print this help
 If the specified user is empty, nothing is done (succesfully), so that
-sudox -e '' can be used to only check the environment. In that case a
-second argument (if provided) is used for the program name for -e failure"
+sudox -e '' can be used to only check the environment. In that mode a
+second argument (if provided) is used as program name in case of error output"
 	exit ${1:-1}
 }
 
-tmpdir=
+sx_tmp=
 RmTemp() {
 	trap : EXIT HUP INT TERM
-	[ -n "${tmpdir:++}" ] && test -d "$tmpdir" && rm -rf -- "$tmpdir"
-	tmpdir=
+	[ -n "${sx_tmp:++}" ] && test -d "$sx_tmp" && rm -rf -- "$sx_tmp"
+	sx_tmp=
 	ClearTrap
 }
 
-retvalue=0
+sx_retvalue=0
 MyTrap() {
 	RmTemp
-	exit $retvalue
+	exit $sx_retvalue
 }
 
 ClearTrap() {
@@ -238,42 +262,42 @@ ClearTrap() {
 }
 
 MkTemp() {
-	[ -n "${tmpdir:++}" ] && return
+	[ -n "${sx_tmp:++}" ] && return
 	trap MyTrap EXIT HUP INT TERM
 	if command -v mktemp >/dev/null 2>&1
-	then	tmpdir=`umask 077 && mktemp -d -- "${TMPDIR:-/tmp}/${0##*/}.XXXXXXXX"` \
-			&& [ -n "${tmpdir:++}" ] && test -d "$tmpdir" && return
+	then	sx_tmp=`umask 077 && mktemp -d -- "${TMPDIR:-/tmp}/${0##*/}.XXXXXXXX"` \
+			&& [ -n "${sx_tmp:++}" ] && test -d "$sx_tmp" && return
 		ClearTrap
 		ErrMessage 'cannot create temporary directory'
 		return 2
 	fi
 	if [ -z "${have_random:++}" ]
-	then	r=${RANDOM-}
-		if [ x"$r" = x"${RANDOM-}" ] && [ x"$r" = x"${RANDOM-}" ]
+	then	sx_c=${RANDOM-}
+		if [ x"$sx_c" = x"${RANDOM-}" ] && [ x"$sx_c" = x"${RANDOM-}" ]
 		then	have_random=false
-			r=`od -d -N2 /dev/random 2>/dev/null` || r=
-			r=`printf '%s' $r`
-			if [ -z "${r:++}" ]
-			then	r=1
-			else	r=$(( $r % 32768 ))
-				[ "$r" -eq 0 ] && r=1
+			sx_c=`od -d -N2 /dev/random 2>/dev/null` || sx_c=
+			sx_c=`printf '%s' $sx_c`
+			if [ -z "${sx_c:++}" ]
+			then	sx_c=1
+			else	sx_c=$(( $sx_c % 32768 ))
+				[ "$sx_c" -eq 0 ] && sx_c=1
 			fi
 		else	have_random=:
 		fi
-		t=
+		sx_a=
 	fi
-	c=0
-	while [ $c -le 999 ]
-	do	if [ -n "${t:++}" ]
+	sx_b=0
+	while [ $sx_b -le 999 ]
+	do	if [ -n "${sx_a:++}" ]
 		then	if $have_random
-			then	r=$RANDOM
-			else	r=$(( $r * 13821 ))
-				r=$(( $r % 32768 ))
+			then	sx_c=$RANDOM
+			else	sx_c=$(( $sx_c * 13821 ))
+				sx_c=$(( $sx_c % 32768 ))
 			fi
 		fi
-		t=${TMPDIR:-}/tmp/${0##*/}.$$$c$r
-		mkdir -m 700 -- "$t" && tmpdir=$t && return
-		c=$(( $c + 1 ))
+		sx_a=${TMPDIR:-}/tmp/${0##*/}.$$$sx_b$sx_c
+		mkdir -m 700 -- "$sx_a" && sx_tmp=$sx_a && return
+		sx_b=$(( $sx_b + 1 ))
 	done
 	ClearTrap
 	ErrMessage 'cannot create temporary directory'
@@ -282,119 +306,140 @@ MkTemp() {
 
 # Parse options
 
-
-askpass=:
-untrusted=false
-deletex=false
-timeout=0
-xtransfer=:
-screen=
-script=:
-checkenv=false
-loginenv=false
-rootmode=
-variable=
-Push -c sudoargs
+sx_askpass=:
+sx_untrusted=false
+sx_delx=false
+sx_timeout=0
+sx_xtrans=:
+sx_screen=
+sx_script=:
+sx_cenv=false
+sx_lenv=false
+sx_root=
+sx_var=
+sx_fd=
+Push -c sx_sudoargs
+SetFD() {
+	sx_fd=${1%%,*}
+	sx_fda=
+	sx_fdb=
+	case $1 in
+	*,*,*,*)
+		Fatal 'only two commas allowed in FD specification';;
+	*,*,*)
+		sx_fdb=${1##*,}
+		sx_fda=${1#*,}
+		sx_fda=${sx_fda%%,*};;
+	*,*)
+		sx_fda=${1#*,};;
+	esac
+	IsNumber "$sx_fd" && IsNumber "${sx_fda:-0}" \
+		&& IsNumber "${sx_fdb:-0}" \
+		|| Fatal 'file descriptor must be a number'
+	if [ $sx_fd -lt 3 ] || [ ${sx_fda:-3} -lt 3 ] || [ ${sx_fdb:-3} -lt 3 ]
+	then	Fatal 'file descriptor number must be at least 3'
+	fi
+}
 ReadOpt() {
 	OPTIND=1
-	while getopts "v:lsSepuTUt:xRNHVh?a:c:g:r:inkKbPAE" opt
-	do	case $opt in
-		v)	variable=$OPTARG
-			CheckVarname "$variable";;
-		l)	loginenv=:;;
-		s)	screen='tmux screen';;
-		S)	screen='screen tmux';;
-		e)	checkenv=:;;
-		p)	askpass=false;;
-		T)	script=;;
-		u)	untrusted=:;;
-		t)	timeout=$OPTARG;;
-		U)	deletex=:;;
-		x)	xtransfer=false;;
-		R)	rootmode=:;;
-		N)	rootmode=false;;
-		H)	:;;
+	while getopts "v:F:lsSepuTUt:xRNHVh?a:C:c:g:r:AbEiKknP" sx_a
+	do	case $sx_a in
+		v)	CheckVarname "$OPTARG" && sx_var=$OPTARG;;
+		F)	SetFD "$OPTARG";;
+		l)	sx_lenv=:;;
+		s)	sx_screen='tmux screen';;
+		S)	sx_screen='screen tmux';;
+		e)	sx_cenv=:;;
+		p)	sx_askpass=false;;
+		T)	sx_script=;;
+		u)	sx_untrusted=:;;
+		t)	sx_timeout=$OPTARG;;
+		U)	sx_delx=:;;
+		x)	sx_xtrans=false;;
+		R)	sx_root=:;;
+		N)	sx_root=false;;
 		V)	Version;;
 		[h?])	Usage;;
-		[acgr])
-			Push sudoargs "-$opt" "$OPTARG";;
-		*)	Push sudoargs "-$opt";;
+		[aCcgr])
+			Push sx_sudoargs "-$sx_a" "$OPTARG";;
+		H)	:;;
+		*)	Push sx_sudoargs "-$sx_a";;
 		esac
 	done
-	optind=$OPTIND
-	$sudox_opt || return 0
-	shift $(( $optind - 1 ))
+	sx_optind=$OPTIND
+	$sx_opt || return 0
+	shift $(( $sx_optind - 1 ))
 	[ $# -eq 0 ] || Fatal 'SUDOX_OPT must only contain options'
 }
 [ -z "${SUDOX_OPT:++}" ] || {
-	sudox_opt=:
+	sx_opt=:
 	ReadOpt $SUDOX_OPT
 }
-sudox_opt=false
+sx_opt=false
 ReadOpt ${1+"$@"}
-shift $(( $optind - 1 ))
+shift $(( $sx_optind - 1 ))
 
 # Check/modify environment first
 
-if $checkenv && [ -n "${STY++}${TMUX++}" ]
+if $sx_cenv && [ -n "${STY++}${TMUX++}" ]
 then	if [ $# -eq 2 ] && [ -z "$1" ]
-	then	name=$2
-	else	name=${0##*/}
+	then	sx_a=$2
+	else	sx_a=${0##*/}
 	fi
 Fatal() {
-	MsgErr "$name: terminating: $*"
+	MsgErr "$sx_a: terminating: $*"
 	exit 1
 }
 	[ -z "${STY++}" ] || {
-		[ -z "${TMUX++}" ] || Fatal 'screen and tmux both seem to be running.'
-		Fatal 'screen seems to be running.'
+		[ -z "${TMUX++}" ] || Fatal 'screen and tmux both seem to be running'
+		Fatal 'screen seems to be running'
 	}
-	Fatal 'tmux seems to be running.'
+	Fatal 'tmux seems to be running'
 fi
-! $loginenv || unset STY TMUX
+! $sx_lenv || unset STY TMUX
 
 # Parse remainder
 
-Push sudoargs -H
-remoteuse=root
+Push sx_sudoargs -H
+sx_remoteuse=root
 if [ $# -gt 0 ]
-then	remoteuse=$1
-	[ -n "$remoteuse" ] || exit 0
+then	sx_remoteuse=$1
+	[ -n "$sx_remoteuse" ] || exit 0
 	shift
-	Push sudoargs "-u" "$remoteuse"
+	Push sx_sudoargs "-u" "$sx_remoteuse"
 fi
 
 # Implicit option dependencies
 
-$xtransfer || untrusted=false
-! $untrusted || rootmode=false
-[ -n "$rootmode" ] || if [ "$remoteuse" = 'root' ]
-then	rootmode=:
-else	rootmode=false
+$sx_xtrans || sx_untrusted=false
+! $sx_untrusted || sx_root=false
+[ -n "$sx_root" ] || if [ "$sx_remoteuse" = 'root' ]
+then	sx_root=:
+else	sx_root=false
 fi
 
 # Calculate/check correct screen program, possibly unsetting environment
 
-if [ -n "${screen:++}" ]
-then	for screenprg in $screen
-	do	if screen=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
-command -v "$screenprg" 2>/dev/null` && [ -n "${screen:++}" ]
-		then	case $screenprg in
-			screen)
+if [ -n "${sx_screen:++}" ]
+then	for sx_a in $sx_screen
+	do	if sx_screen=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
+command -v "$sx_a" 2>/dev/null` && [ -n "${sx_screen:++}" ]
+		then	case $sx_a in
+			sx_screen)
 				unset STY;;
 			tmux)
 				unset TMUX;;
 			esac
 			break
-		else	screen=
+		else	sx_screen=
 		fi
 	done
-	[ -z "${screen:++}" ] || Fatal 'tmux/screen not found'
+	[ -z "${sx_screen:++}" ] || Fatal 'tmux/screen not found'
 fi
 
 HasDash() {
-	for dashtest
-	do	case $dashtest in
+	for sx_a
+	do	case $sx_a in
 		-*)
 			return 0;;
 		esac
@@ -403,181 +448,216 @@ HasDash() {
 }
 
 if HasDash ${1+"$@"}
-then	dash=--
-else	dash=
+then	sx_dash=--
+else	sx_dash=
 fi
 
 # Check whether we want to change to the current user
 
-currid=`id -un` && [ -n "$currid" ] || Fatal 'cannot get id'
-if [ x"$currid" = x"$remoteuse" ]
-then	msg=
-	! $deletex || msg='. ignoring -U'
-	! $untrusted || if [ -n "$msg" ]
-	then	msg=$msg' -u'
-	else	msg='. ignoring -u'
+sx_a=`id -un` && [ -n "$sx_a" ] || Fatal 'cannot get id'
+if [ x"$sx_a" = x"$sx_remoteuse" ]
+then	sx_b=
+	! $sx_delx || sx_b='. ignoring -U'
+	! $sx_untrusted || if [ -n "$sx_b" ]
+	then	sx_b=$sx_b' -u'
+	else	sx_b='. ignoring -u'
 	fi
-	[ -z "$script" ] || msg=$msg'. forcing -T'
-	[ -z "$msg" ] || Warning "warning: remote user is the current user$msg"
-	[ -z "${screen:++}" ] || DoExec "$screen" $dash ${1+"$@"}
+	[ -z "$sx_script" ] || sx_b=$sx_b'. forcing -T'
+	[ -z "$sx_b" ] || Warning "warning: remote user is the current user$sx_b"
+	[ -z "${sx_screen:++}" ] || DoExec "$sx_screen" $sx_dash ${1+"$@"}
 	DoExec ${1+"$@"}
 fi
 
-# Calculate $script path
+# Calculate $sx_script path
 
-if [ -n "$script" ]
-then	script=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
-command -v script 2>/dev/null` && [ -n "$script" ] || Fatal '"script" not found'
+if [ -n "$sx_script" ]
+then	sx_script=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
+command -v script 2>/dev/null` && [ -n "$sx_script" ] \
+		|| Fatal '"sx_script" not found'
 fi
 
 # Check for SUDO_ASKPASS
 
-! $askpass || [ -z "${SUDO_ASKPASS:++}" ] || Push sudoargs -A
+! $sx_askpass || [ -z "${SUDO_ASKPASS:++}" ] || Push sx_sudoargs -A
 
 # Generate remote command and data to transfer
 
-Push -c displays
-Push -c transfer
+Push -c sx_displays
+Push -c sx_transfer
 
 CalcTransferAll() {
-	eval "set -- a $displays"
+	eval "set -- sx_a $sx_displays"
 	shift
-	for a
-	do	b=`xauth -q nlist "$a"` && [ -n "${b:++}" ] && \
-			Push transfer "$b"
+	for sx_a
+	do	sx_b=`xauth -q nlist "$sx_a"` && [ -n "${sx_b:++}" ] && \
+			Push sx_transfer "$sx_b"
 	done
 }
 
 CalcTransferUntrusted() {
 	[ -n "${DISPLAY:++}" ] || return 0
 	MkTemp || exit
-	a=$tmpdir/untrusted
+	sx_a=$sx_tmp/untrusted
 	(
-		umask 077 && : >"$a"
-	) || Fatal "cannot create $a"
-	xauth -q -f "$a" generate "$DISPLAY" . untrusted timeout "$timeout" \
+		umask 077 && : >"$sx_a"
+	) || Fatal "cannot create $sx_a"
+	xauth -q -f "$sx_a" generate \
+		"$DISPLAY" . untrusted timeout "$sx_timeout" \
 		|| Fatal 'failed to create untrusted permissions.
 Perhaps your xorg-server was compiled without --enable-xcsecurity'
-	b=`xauth -f "$a" nlist "$DISPLAY"` && [ -n "${b:++}" ] \
+	sx_b=`xauth -f "$sx_a" nlist "$DISPLAY"` && [ -n "${sx_b:++}" ] \
 		|| Fatal 'failed to source data with untrusted permission'
-	rm -- "$a"
-	Push transfer "$b"
+	rm -- "$sx_a"
+	Push sx_transfer "$sx_b"
 }
 
 CalcDisplays() {
 	[ -n "${DISPLAY:++}" ] || return 0
-	Push -c displays "$DISPLAY"
-	dispnum=${DISPLAY##*:}
-	[ x"$dispnum" != x"$DISPLAY" ] || return 0
-	disphost=${DISPLAY%:*}
-	if [ -n "${disphost:++}" ]
-	then	Push -c displays "$disphost/unix:$dispnum"
-		if [ x"$disphost" = x'localhost' ]
+	Push -c sx_displays "$DISPLAY"
+	sx_a=${DISPLAY##*:}
+	[ x"$sx_a" != x"$DISPLAY" ] || return 0
+	sx_b=${DISPLAY%:*}
+	if [ -n "${sx_b:++}" ]
+	then	Push -c sx_displays "$sx_b/unix:$sx_a"
+		if [ x"$sx_b" = x'localhost' ]
 		then	HOSTNAME=`hostname 2>/dev/null`
-			Push -c displays "$HOSTNAME:$dispnum" "$HOSTNAME/unix:$dispnum"
+			Push -c sx_displays "$HOSTNAME:$sx_a" \
+				"$HOSTNAME/unix:$sx_a"
 		fi
 	fi
 }
 
-if $untrusted
+if $sx_untrusted
 then	CalcDisplays
 	CalcTransferUntrusted
-elif $deletex
+elif $sx_delx
 then	CalcDisplays
-elif $xtransfer && ! $rootmode
+elif $sx_xtrans && ! $sx_root
 then	CalcDisplays
 	CalcTransferAll
 fi
 
-# Generate fifo
-if [ -z "${transfer:++}" ] || [ -n "$variable" ]
-then	fifo=
+# Generate FIFO
+if [ -z "${sx_transfer:++}" ] || [ -n "$sx_var" ] || [ -n "$sx_fd" ]
+then	sx_fifo=
 	RmTemp
 else	MkTemp
-	chmod -- 711 "$tmpdir"
-	fifo=$tmpdir/fifo
-	( umask 000 && mkfifo -- "$fifo" ) \
-		|| Fatal "cannot create fifo $fifo"
+	chmod -- 711 "$sx_tmp"
+	sx_fifo=$sx_tmp/fifo
+	( umask 000 && mkfifo -- "$sx_fifo" ) \
+		|| Fatal "cannot create fifo $sx_fifo"
 fi
 
 # Generate remote command:
 
 TransferVariable() {
-	eval "$1=\$transfer'sudox_magic_separator'\${${1}++}\${${1}-}
+	eval "$1=\$sx_transfer'sudox_magic_separator'\${${1}++}\${${1}-}
 	export $1"
 }
 
 # This must be a function, because we use set --
 GenRemote() {
-	if ! $xtransfer && ! $deletex
-	then	if [ -n "${dash:++}" ] || HasDash "$script" "$screen"
-		then	Push sudoargs --
+	if ! $sx_xtrans && ! $sx_delx
+	then	if [ -n "${sx_dash:++}" ] || HasDash "$sx_script" "$sx_screen"
+		then	Push sx_sudoargs --
 		fi
 		return
 	fi
-	Push sudoargs --
-	Push sudoargs "$0"
+	Push sx_sudoargs --
+	Push sx_sudoargs "$0"
 	# Store SHELL and DISPLAY _before_ TransferVariable,
 	# so that they can be used with -v
-	shellarg=${SHELL:-sh}
-	disparg=
-	! $xtransfer || disparg=${DISPLAY-}
-	transarg=
-	if [ -n "${transfer:++}" ]
-	then	if [ -n "${variable:++}" ]
-		then	TransferVariable "$variable"
-			transarg='$'$variable
-		else	transarg=$fifo
+	sx_a=${SHELL:-sh}
+	sx_b=
+	! $sx_xtrans || sx_b=${DISPLAY-}
+	sx_c=
+	if [ -n "${sx_transfer:++}" ]
+	then	if [ -n "${sx_var:++}" ]
+		then	TransferVariable "$sx_var"
+			sx_c='$'$sx_var
+		elif [ -n "${sx_fd:++}" ]
+		then	sx_c='&'$sx_fd
+		else	sx_c=$sx_fifo
 		fi
-	elif $xtransfer && $rootmode
-	then	transarg='~'${XAUTHORITY:-"$HOME/.Xauthority"}
+	elif $sx_xtrans && $sx_root
+	then	sx_c='~'${XAUTHORITY:-"$HOME/.Xauthority"}
 	fi
-	eval "set -- a $displays"
+	eval "set -- a $sx_displays"
 	shift
-	Push sudoargs '-remotecall' "$transarg" \
-		${1+"$@"} '-dispend;' "$shellarg" "$disparg"
-	unset XAUTHORITY
+	Push sx_sudoargs '-remotecall' "$sx_c" \
+		${1+"$@"} '-dispend;' "$sx_a" "$sx_b"
 }
 GenRemote "$0"
 
-if [ -n "$script" ]
-then	script=`PATH='/bin:/sbin:/usr/bin:/usr/sbin' \
-command -v script 2>/dev/null` && [ -n "$script" ] \
-		|| Fatal '"script" not found'
-	if [ -n "${screen:++}" ]
-	then	Push -c sudocmd exec "$screen" $dash ${1+"$@"}
-	else	Push -c sudocmd ${1+"$@"}
+if [ -n "$sx_script" ]
+then	if [ -n "${sx_screen:++}" ]
+	then	Push -c sx_a exec "$sx_screen" $sx_dash ${1+"$@"}
+	else	Push -c sx_a ${1+"$@"}
 	fi
-	Push sudoargs "$script" -q -e \
-		${sudocmd:+-c} ${sudocmd:+"$sudocmd"} /dev/null
-else	if [ -n "${screen:++}" ]
-	then	Push -c sudoargs "$screen" $dash ${1+"$@"}
-	else	Push -c sudoargs ${1+"$@"}
+	Push sx_sudoargs "$sx_script" -q -e \
+		${sx_a:+-c} ${sx_a:+"$sx_a"} /dev/null
+else	if [ -n "${sx_screen:++}" ]
+	then	Push -c sx_sudoargs "$sx_screen" $sx_dash ${1+"$@"}
+	else	Push -c sx_sudoargs ${1+"$@"}
 	fi
 fi
-eval "set -- a $sudoargs"
+eval "set -- a $sx_sudoargs"
 shift
 
-if [ -z "${fifo:++}" ]
+# Can we terminate early?
+
+if [ -z "${sx_transfer:++}" ] || [ -n "${sx_var:++}" ]
 then	exec sudo ${1+"$@"}
 	Fatal 'cannot exec sudo'
 fi
 
+# We cannot terminate early: Pass cookies by FIFO or FD
+
 # Free memory:
-unset sudoargs sudocmd displays dash transarg disparg count have_random \
-askpass untrusted deletex timeout xtransfer screen script \
-checkenv loginenv rootmode variable
-unset -f Echo MsgErr Warning Fatal Push DoExec CheckVarname \
-AddAuthorities Troyan NonMatch ReadTransfer ParseFifo ParseVariable \
-Version Usage MkTemp HasDash \
+unset sx_remoteuse sx_sudoargs sx_displays sx_dash have_random \
+sx_askpass sx_untrusted sx_delx sx_timeout sx_xtrans sx_screen sx_script \
+sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind sx_a sx_b sx_c
+unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname \
+AddAuthorities Troyan NonMatch ReadTransfer ParseFifo ParsePipe ParseVariable \
+Version Usage MkTemp SetFD ReadOpt HasDash \
 CalcTransferAll CalcTransferUntrusted CalcDisplays \
 TransferVariable GenRemote 2>/dev/null
 
+if [ -n "$sx_fd" ]
+then	# Passing cookies by FD
+	# Free memory needed only for FIFO:
+	unset sx_retvalue sx_tmp sx_fifo
+	unset -f RmTemp MyTrap ClearTrap 2>/dev/null
+
+	[ -n "$sx_fda" ] || sx_fda=$(( $sx_fd + 1 ))
+	[ -n "$sx_fdb" ] || sx_fdb=$(( $sx_fda + 1 ))
+	# The idea of this dup magic is due to
+	# Helmut Waitzmann <nn.throttle at xoxy.net>
+	eval '{
+{
+printf '\''%s\n%s'\'' "${#sx_transfer}" "$sx_transfer" >&'$sx_fd'
+unset sx_transfer
+}	'$sx_fda'<&- '$sx_fd'>&1 1>&'$sx_fdb' '$sx_fdb'<&- \
+| {
+unset sx_transfer
+sudo ${1+"$@"} '$sx_fdb'<&- '$sx_fd'<&0 0<&'$sx_fda' '$sx_fda'<&-
+}
+} '$sx_fda'<&0 '$sx_fdb'>&1'
+	exit
+fi
+
+# Passing cookies by FIFO
+
+# Free memory needed only for FD:
+unset sx_fd sx_fda sx_fdb
+
 # Fill fifo:
 {
-	printf '%s\n%s' "${#transfer}" "$transfer" >"$fifo"
+	printf '%s\n%s' "${#sx_transfer}" "$sx_transfer" >"$sx_fifo"
+	unset sx_transfer
 	RmTemp
 } &
+unset sx_transfer
 
 # Clearing the trap is a race, but in the worst case we leave tmpdir.
 # This is better than removing tmpdir possibly twice (if it was already
@@ -586,11 +666,11 @@ TransferVariable GenRemote 2>/dev/null
 # which might be prepared then writable by the attacker.
 ClearTrap
 sudo ${1+"$@"}
-retvalue=$?
-[ -z "${fifo:++}" ] || ! test -p "$fifo" || {
+sx_retvalue=$?
+[ -z "${sx_fifo:++}" ] || ! test -p "$sx_fifo" || {
 	# If the fifo still exists, we empty it to finish our background job
 	# and thus to clean tmpdir: Avoid removing tmpdir twice as noted above.
-	cat -- "$fifo" >/dev/null
+	cat -- "$sx_fifo" >/dev/null
 	wait
 }
-exit $retvalue
+exit $sx_retvalue

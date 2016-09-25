@@ -9,6 +9,79 @@ Also some support for tty handling (e.g. screen and tmux) is provided.
 
 For more details, see the output of sudox -h
 
+__ You should configure sudox (and sudo) for security reasons! __
+
+** SECURITY NOTES **
+
+By default, sudox passes X cookies through a world-readable FIFO,
+because this is necessary if sudo is not configured correspondingly.
+This means that an attacker can read the X cookies from the FIFO and thus
+access your X session. Although sudox will recognize this and stops with an
+error about a Troyan, the attacker might misuse the X cookies already and hide
+the display of this information.
+Another disadvantage is that sudox needs to keep a process running to fill
+the FIFO and cannot terminate until the sudo program returns.
+
+Therefore, it is strongly recommended to use other methods.
+
+1. Best method:
+If your system is such that the process calling environment is readable only
+by the user (on linux e.g. if /proc/*/environment is only user readable), a
+variable can be used for X cookies passing. Any existing or or nonexisting
+variable which is not magic to the shell can be used for this
+(excluded are only variables matching sx_[a-z]*).
+Typical examples are TERM, DISPLAY, XAUTHORITY, LANG, or SUDOX_OPT.
+If sudo is configured to pass such a variable (see e.g. the
+provided sudoers.d), sudox can use this variable to transfer information:
+Specify the option "-v VARNAME" in each call of sudox (see SUDOX_OPT below).
+It does not matter whether you need this variable also for another purpose:
+sudox will restore the original setting of that variable (and possibly unset
+it) once the X cookies are transferred with it.
+
+2. Second best method:
+If the method above is not possible (e.g. because sudo is configured to not
+pass _any_ variable and you cannot change the configuration), sudox can use
+a file descriptor to pass X cookies. This method is only suboptimal, because
+sudox still needs to keep a process running to fill the descriptor and cannot
+terminate until the sudo program returns.
+Moreover, sudo must be configured to not close the corresponding file
+descriptor, e.g. by allowing closefrom_override (see the provided sudoers.d).
+To use this method, also two auxiliary file descriptors are needed which should
+not be used otherwise (these can be closed by sudo).
+Use the option -F FD or -F FD,FDa or -F FD,FDa,FDb in each call of sudox
+(see SUDOX_OPT below) to instruct sudox to use the file descriptor number FD
+for passing (and FDa and FDb as auxiliary descriptors; if not specified, FDa
+is (FD + 1) and FDb is (FDa + 1)).
+A typical example is -F3 (which is the same as -F3,4 or -F3,4,5).
+Unless you configured sudo to use "closefrom=4" (or higher), you have to
+combine this example with the option -C4 (which works only if sudo is
+configured to allow closefrom_override).
+
+root mode alternative:
+If the destination user has the permission to read the calling user's
+XAUTHORITY file (default: ~/.Xauthority), then XAUTHORITY can be set
+to that file. This has the implication that also all modifications of
+permissions go to that file. In particular, this method cannot be used
+to generate untrusted permissions for the destination user.
+This method is used by sudox automatically if the destination user is root
+and no untrusted permissions are requested. To override this default, use
+the options -R (to force root mode) or -N (to force non-root mode).
+
+SUDOX_OPT:
+Options of the environment variable SUDOX_OPT are used by default
+for every call of sudox. In particular, if you have permissions to change
+the sudo configuration, it is recommended to transfer this variable by sudo
+and to put the line
+
+export SUDOX_OPT=-vSUDOX_OPT
+
+(or some analogue for the shell) into all user's shell startup files, so that
+the variable is exported everywhere and simultaneously used to transfer
+X cookies (according to the preferred method 1 above).
+
+** END SECURITY NOTES **
+
+
 If you want to change the user for the remainder of the whole shell session
 and are somewhat paranoic to do this by accident from a runnnig
 screen or tmux session, you can use "sudoxe" in place of sudox:
@@ -17,9 +90,13 @@ Be aware that when using sudoxe (or "exec sudox") and sudo asks for a
 password, a wrong password will terminate your session anyway.
 (Please let me know if you know a trick how to avoid this problem...)
 
+
+Installation:
+
 For installation, copy sudox bin/* to your $PATH and add the line
 
 . sudoxe
+(don't forget to add also SUDOX_OPT, see SECURITY NOTES above)
 
 to your shell startup file to define the shell functions sudox() and sudoxe()
 (sudox() calls sudox with a secure PATH setting). Alternatively, add these
@@ -30,8 +107,9 @@ of zsh's $fpath
 
 You will need push.sh from https://github.com/vaeth/push in your path.
 
-It is strongly recommended to copy sudoers.d/* to /etc/sudoers.d and to set
-appropriate permissions. If you do this, it is also strongly recommended to
-export the variables from env.d/* to your user's shell startup files.
+According to the security notes above, it is strongly recommended to copy/use
+sudoers.d/* to /etc/sudoers.d and to set appropriate permissions.
+If you do this, it is also strongly recommended to export the variables
+from env.d/* to your user's shell startup files.
 
 For Gentoo, there is an ebuild in the mv overlay (available by layman).

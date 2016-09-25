@@ -9,7 +9,8 @@ case $service in
 );;
 esac
 _arguments -s -S -A '-*' : $opts \
-'-v+[Use specified VAR for data passing]:variable:(DISPLAY LANG SUDOX_OPT TERM)' \
+'-v+[Use specified VAR for cookie passing]:variable:(DISPLAY LANG SUDOX_OPT TERM XAUTHORITY)' \
+'-F+[Use specified FD\[,FDa\[,FDb\]\] for cookie passing]:fd:("32012,32011,32010")' \
 '-l[Clear STY/TMUX]' \
 '-s[Start a tmux/screen session]' \
 '-S[Start a screen/tmux session]' \
@@ -22,15 +23,17 @@ _arguments -s -S -A '-*' : $opts \
 '(-u -t)-x[Do not transfer any X authority data]' \
 '-R[Force root mode]' \
 '-N[Force non-root mode]' \
+'*-o+[Pass specified option to sudo]:sudo option:()' \
 '-A[sudo --askpass]' \
-'-k[sudo --reset-timestamp]' \
-'-K[sudo --remove-timestamp]' \
 '-b[sudo --background]' \
 '-E[sudo --preserve-env]' \
-'-P[sudo --preserve-groups]' \
 '-i[sudo --login]' \
+'-K[sudo --remove-timestamp]' \
+'-k[sudo --reset-timestamp]' \
 '-n[sudo --non-interactive]' \
+'-P[sudo --preserve-groups]' \
 '-a+[sudo specify type]:type:()' \
+'-C+[sudo specify close-from]:filedescriptor:(32012)' \
 '-c+[sudo specify class]:class:()' \
 '-g+[sudo specify group]:group:_groups' \
 '-r+[sudo specify rule]:rule:()' \

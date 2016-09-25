@@ -1,5 +1,22 @@
 # ChangeLog for sudox:
 
+*sudox-7.0.0:
+	Martin Väth <martin at mvath.de>:
+	- ** Read the SECURITY NOTES **
+	  Recommendations and remarks have been moved from the help page to
+	  the README file
+	- Support also -vXAUTHORITY and all other variables (except sx_*)
+	- New option -F FD[,FDa[,FDb]] which allows passing cookies through
+	  file descriptor FD.
+	  Thanks a lot to Helmut Waitzmann <nn.throttle at xoxy.net>
+	  for describing the necessery file-dup magic in detail in usenet post
+	  <8737kpggy4.fsf@helmutwaitzmann.news.arcor.de>
+	- New option -o to collect arbitrary option to sudo; also be verbose in
+	  help which options are passed and whether they take argument
+	- Unset XAUTHORITY when cookies are passed
+	- More care in freeing memory
+	- Fix duplicate calculation of script path
+
 *sudox-6.0.0:
 	Martin Väth <martin at mvath.de>:
 	- New option -vVAR which allows passing cookies by variable VAR
