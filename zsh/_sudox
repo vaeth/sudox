@@ -1,4 +1,6 @@
 #compdef sudox sudoxe
+local curcontext="$curcontext" state state_descr line
+typeset -A opt_args
 local opts
 opts=()
 case $service in
@@ -8,9 +10,9 @@ case $service in
 '-e[Check for clear TMUX/STY environment]'
 );;
 esac
-_arguments -s -S -A '-*' : $opts \
-'-v+[Use specified VAR for cookie passing]:variable:(DISPLAY LANG SUDOX_OPT TERM XAUTHORITY)' \
-'-F+[Use specified FD\[,FDa\[,FDb\]\] for cookie passing]:fd:("32012,32011,32010")' \
+_arguments -C -s -S -A '-*' : $opts \
+'-v+[Use specified VAR/cmdline for cookie passing]:variable:->var' \
+'-F+[Use specified FD/FIFO for cookie passing]:file descriptor:->fd' \
 '-l[Clear STY/TMUX]' \
 '-s[Start a tmux/screen session]' \
 '-S[Start a screen/tmux session]' \
@@ -33,7 +35,7 @@ _arguments -s -S -A '-*' : $opts \
 '-n[sudo --non-interactive]' \
 '-P[sudo --preserve-groups]' \
 '-a+[sudo specify type]:type:()' \
-'-C+[sudo specify close-from]:filedescriptor:(32012)' \
+'-C+[sudo specify close-from]:file descriptor:(4)' \
 '-c+[sudo specify class]:class:()' \
 '-g+[sudo specify group]:group:_groups' \
 '-r+[sudo specify rule]:rule:()' \
@@ -42,3 +44,24 @@ _arguments -s -S -A '-*' : $opts \
 '(1 * -)-h[Print help]' \
 '1:user name:_users' \
 '*:::command: _normal'
+local ret=$?
+case $state in
+(var)
+	local vars
+	vars=(
+	{{,LS_}COLORS,DISPLAY,HOSTNAME,LS_COLORS,PS{1,2},TERM,XAUTHORI{TY,ZATION}}':passed by sudo default'
+	'-:pass via command line'
+	{COLORTERM,LANG{,UAGE},LC_{ALL,CTYPE,NUMERIC,TIME,COLLATE,MONETARY,MESSAGES,PAPER,NAME,ADDRESS,TELEPHONE,MEASUREMENT,IDENTIFICATION,ALL},LINGUAS,TERM,TZ}':checked by sudo default'
+	)
+	_describe -t variables 'variable' vars
+	ret=$?;;
+(fd)
+	local fds
+	fds=(
+	3{,',4'{,',5'}}':file descriptor 3 (auxiliary 4, 5)'
+	'-:pass via FIFO'
+	)
+	_describe -t 'file descriptors' 'file descriptor' fds
+	ret=$?;;
+esac
+return ret

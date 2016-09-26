@@ -1,8 +1,9 @@
-#The following is needed for sudox -vSUDOX_OPT
-Defaults env_keep+="SUDOX_OPT"
+#The following is needed for sudox -vDISPLAY (which is the default).
+#Note that env_keep contains DISPLAY by default unless you explicitiy reset it
+#Defaults env_keep+="DISPLAY"
 
 #The following is needed for sudox -F3 -C4
 #Defaults closefrom_override
 
 #The follwoing is needed for sudox -F3
-#Defaults closefrom=3
+#Defaults closefrom=4

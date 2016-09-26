@@ -1,13 +1,31 @@
 # ChangeLog for sudox:
 
+*sudox-8.0.0:
+	Martin Väth <martin at mvath.de>:
+	- Option -vDISPLAY is the new default, because also sudo has the
+	  default to preserve the variable DISPLAY
+	- Option -F now takes precedence over -v (because of the new default)
+	- Option -F- to select FIFO method (which was default previously)
+	- Option -v- to select new "command line" method
+	- Due to the new secure default setting, the security notes are no
+	  longer emphasized
+	- sudoers.d has been modified to the new default variable. It now
+	  contains no uncommented line, because sudox passes DISPLAY by default
+	- env.d has been removed: It is no longer recommended to set SUDOX_OPT.
+	  Maybe in a future release, SUDOX_OPT will be removed completely
+	- Option -o now actually works ;)
+	- zsh completion: Fix defaults for -F, -C, -v
+	- zsh completion: Specify "file descriptor"
+	- internal: Avoid magic string separation hack: we must use eval anyway
+	- internal: Simplify remote call syntax, in particular for displays
+
 *sudox-7.0.0:
 	Martin Väth <martin at mvath.de>:
-	- ** Read the SECURITY NOTES **
-	  Recommendations and remarks have been moved from the help page to
+	- Recommendations and remarks have been moved from the help page to
 	  the README file
 	- Support also -vXAUTHORITY and all other variables (except sx_*)
-	- New option -F FD[,FDa[,FDb]] which allows passing cookies through
-	  file descriptor FD.
+	- New option -F#[,#a[,#b]] which allows passing cookies through
+	  file descriptor #.
 	  Thanks a lot to Helmut Waitzmann <nn.throttle at xoxy.net>
 	  for describing the necessery file-dup magic in detail in usenet post
 	  <8737kpggy4.fsf@helmutwaitzmann.news.arcor.de>

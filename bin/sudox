@@ -20,13 +20,14 @@ SHELL_OPTS=
 # change in future versions).
 # Currently, the syntax for the remote side is as follows:
 #
-# "$0" '-remotecall' \
-#        'Path to fifo'|'~'"$XAUTHORITY"|'$VAR'|'&FD'|'' \
-#        display1 display2 ... '-dispend;' \
-#        "$SHELL" "$DISPLAY" \
+# "$0" -remotecall \
+#        a"$XAUTHORITY"|v$VAR|c"$COOKIE"|d$FD|f"$FIFO"|n \
+#        "$DISPLAY" \
+#        "$display_removal" \
+#        "$SHELL" \
 #        command [args for command]
 #
-# The cookies are not passed as an arg but via the fifo, through VAR,
+# The cookies are not passed as an arg but via the FIFO, through VAR,
 # or by setting XAUTHORITY.
 
 # First, some helper functions needed for both parts of the script:
@@ -72,12 +73,19 @@ IsNumber() {
 
 CheckVarname() {
 	case ${1:-/} in
-	[0123456789]*|*[!01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_]*|sx_[abcdefghijklmnopqrstuvwxyz]*)
+	[0123456789]*|*[!01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_]*|sx_[abcdefghijklmnopqrstuvwxyz]*|PATH|IFS|BASH_ENV|ENV|SHELL_OPTS)
 		Fatal "bad variable name '$1'";;
 	esac
 }
 
 # Now the remote part of the script:
+
+RemoveAuthorities() {
+	for sx_a
+	do	xauth -q remove "$1" >/dev/null 2>&1
+	done
+}
+
 
 AddAuthorities() {
 	for sx_a
@@ -97,93 +105,85 @@ ReadTransfer() {
 	read -r sx_a || Troyan 'unreadable stream'
 	IsNumber "$sx_a" || Troyan 'corruption with stream'
 	if [ "$sx_a" -gt 0 ]
-	then	transfer=`dd bs="$sx_a" count=1 2>/dev/null && echo x` || \
+	then	sx_b=`dd bs="$sx_a" count=1 2>/dev/null && echo x` || \
 			Troyan 'corruption with straem'
-		transfer=${transfer%x}
-		[ $sx_a -eq ${#transfer} ] || Troyan 'corruption with fifo'
+		sx_b=${sx_b%x}
+		[ $sx_a -eq ${#sx_b} ] || Troyan 'corruption with FIFO'
 	fi
-	eval "AddAuthorities $transfer"
+	eval "AddAuthorities $sx_b"
 	:
 }
 
 ParseFifo() {
-	test -p "$1" || Troyan "no fifo $1"
+	test -p "$1" || Troyan "no FIFO $1"
 	# || exit, because redirection might start a subshell
 	ReadTransfer <"$1" || exit
 }
 
-ParsePipe() {
+ParseFD() {
 	IsNumber "$1" || Troyan "not a filedescriptpr number '$1'"
 	# || exit, because redirection might start a subshell
 	eval 'ReadTransfer <&'"$1" || exit
 }
 
 ParseVariable() {
-	[ "$1" = sx_oldxauthority ] || CheckVarname "$1"
-	eval "sx_var=\${$1}"
-	# Using Push would be cleaner than a magic separator, but it would
-	# require an eval of an environment variable which appears insecure
-	# (without being able to specify a particular attack scenario...)
-	eval "AddAuthorities ${sx_var%%sudox_magic_separator*}"
-	sx_var=${sx_var#*sudox_magic_separator}
-	case $sx_var in
-	'+'*)
-		sx_var=${sx_var#?}
-		eval "$1=\$sx_var"
-		return;;
+	case $1 in
+	sx_xauthority|sx_display)
+		:;;
+	*)
+		CheckVarname "$1";;
 	esac
-	eval "unset $1"
+	eval "[ -n \${${1}++} ]" || Fatal "variable $1 not passed by sudo"
+	eval "sx_a=\$$1"
+	eval 'set -- "$1" '"$sx_a"
+	if [ $# -eq 2 ]
+	then	eval "unset $1"
+	elif [ $# -eq 3 ]
+	then	eval "$1=\$3"
+	else	Fatal "variable $1 not passed unmodified by sudo"
+	fi
+	eval "AddAuthorities $2"
 }
 
 if [ x"${1-}" = x'-remotecall' ]
-then	shift
-	[ $# -ge 2 ] || NonMatch 'not enough remote arguments'
-	sx_oldxauthority=${XAUTHORITY-}
-	unset XAUTHORITY
-	sx_xauthority=
-	sx_var=
-	sx_fifo=
-	sx_pipe=
-	[ -z "$1" ] || case $1 in
-	'~'*)
-		sx_xauthority=${1#?};;
-	'$XAUTHORITY')
-		sx_var=sx_oldxauthority;;
-	'$'*)
-		sx_var=${1#?};;
-	'&'*)
-		sx_pipe=${1#?};;
-	*)
-		sx_fifo=$1;;
-	esac
-	shift
-	while [ x"$1" != x'-dispend;' ]
-	do	xauth -q remove "$1" >/dev/null 2>&1
-		shift
-		[ $# -gt 0 ] || NonMatch 'no "-dispend;"'
-	done
-	shift
-	if [ -n "${sx_var:++}" ]
-	then	ParseVariable "$sx_var"
-	elif [ -n "${sx_pipe:++}" ]
-	then	ParsePipe "$sx_pipe"
-	elif [ -n "${sx_fifo:++}" ]
-	then	ParseFifo "$sx_fifo"
-	elif [ -n "${sx_xauthority:++}" ]
-	then	XAUTHORITY=$sx_xauthority
-		export XAUTHORITY
-	fi
-	[ $# -ge 2 ] || NonMatch 'not enough remote argument'
-	# Set SHELL and DISPLAY _after_ ParseVariable
-	# so that they can be used with -v
-	SHELL=$1
-	[ -z "${SHELL:++}" ] || export SHELL
-	shift
-	[ -z "${1:++}" ] || {
-		DISPLAY=$1
+then	[ $# -ge 5 ] || NonMatch 'not enough remote args'
+	# set DISPLAY and XAUTHORITY for {Add,Remove}Authorities, but
+	# save previous values for ParseVariable
+	sx_display=${DISPLAY-}
+	[ -z "${3:++}" ] || {
+		DISPLAY=$3
 		export DISPLAY
 	}
-	shift
+	sx_xauthority=${XAUTHORITY-}
+	unset XAUTHORITY
+	eval "RemoveAuthorities $4"
+	case ${2:-x} in
+	a*)
+		XAUTHORITY=${2#?}
+		export XAUTHORITY;;
+	vXAUTHORITY)
+		ParseVariable sx_xauthority;;
+	vDISPLAY)
+		ParseVariable sx_display;;
+	v*)
+		ParseVariable "${2#?}";;
+	c*)
+		eval "AddAuthorities ${2#?}";;
+	d*)
+		ParseFD "${2#?}";;
+	f*)
+		ParseFifo "${2#?}";;
+	n)
+		:;;
+	*)
+		NonMatch 'bad transfer mode';;
+	esac
+	# Set SHELL _after_ ParseVariable
+	[ -z "${5:++}" ] || {
+		SHELL=$5
+		export SHELL
+	}
+	shift 5
 	SUDO_COMMAND=${*-}
 	DoExec ${1+"$@"}
 fi
@@ -191,36 +191,26 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 7.0.0'
+	Echo 'sudox 8.0.0'
 	exit 0
 }
 
 Usage() {
 	Echo "Usage: ${0##*/} [options] [user [command]]
-Similar to sudo -H -u user -s -- but transfer also X authority data.
-If the variable SUDOX_OPT is set, its options are used as default.
-Use this for a safe setting, see README.
--vVAR  Use environment variable VAR instead of a FIFO to transfer cookies;
-   sudo must keep this variable in the enviroment. The original content of VAR
-   is preserved by sudox (it is even preserved if VAR is defined).
-   All names non magic to the shell (e.g. TERM, DISPLAY, XAUTHORITY, LANG)
-   are admissible with the exception of those matching sx_[a-z]*
-   Recommendation: export SUDOX_OPT=-vSUDOX_OPT if possible, see README
--FFD[,FDa[,FDb]]  Use file descriptor FD (and auxiliary descriptors FDa, FDb)
-   to transfer cookies. The descriptor FD must not be closed by sudo. FDa and
-   FDb default to (FD + 1) and (FDa + 1), respectively. Typical usage: -F3 -C4
--oSUDO_OPT  add SUDO_OPT to the list of options passed to sudo.
-   This option can be used repeatedly, all options being accumulated.
+Similar to sudo -H [-s] but transfer also X cookies
+If the variable SUDOX_OPT is set, its options are used as default
+-oOPT  add OPT to the list of options (arguments) passed to sudo
+   This option can be used repeatedly, all OPT values being accumulated.
    In addition to -o, the one-letter options -a, -C -c, -g, -r (each with arg)
    and -A -b -E -i -K -k -n -P (each without arg) are directly passed to sudo
--H is accepted but ignored since -H is passed to sudo anyway
+-H is accepted but ignored (note that -H is passed to sudo anyway)
 -l Clear STY/TMUX for the command/session (mnemonic: login environment)
 -s Start a tmux (fallback to screen) session
 -S Start a screen (fallback to tmux) session
 -e Work only if not in a screen/tmux environment (STY/TMUX)
 -p Without this option, -A is passed to sudo when SUDO_ASKPASS is set
--T Do not call \"script\" to open a new tty; security risk if interactive.
-   If -xT are used but not -s/-S/-U, then act similar to sudo -H -u user --
+-T Do not call \"script\" to open a new tty (security risk if tty is used!)
+   If -xT are used but not -s/-S/-U then act similar to \"sudo -H -u user --\"
    This is useful if special entries in /etc/sudoers should be prepared.
 -u Generate only an untrusted permission. (This requires that your xorg-server
    was compiled with --enable-xcsecurity.) This option implies -N
@@ -230,11 +220,26 @@ Use this for a safe setting, see README.
 -U Delete all related X authority data of the new user (similar to -ut1).
    If combined with -r, the new user might have access to X anyway
 -x Do not transfer any X authority data. If this option is used, -u is ignored
--R Use root mode: Assume that XAUTHORITY (defaults to ~/.Xauthority) is
-   readable by the destination user, and transfer XAUTHORITY for X cookies.
+-R Use root mode: Assume that XAUTHORITY (defaults to ~/.Xauthority) can be
+   read by the destination user, and set XAUTHORITY instead of cookie passing.
    This is the default if user is root and -u is not specified
 -N Use non-root mode. Cancel -R even for root.
    This is the default if user is not root or -u is specified
+-vVAR  Use environment variable VAR instead of DISPLAY for X cookie passing.
+   VAR must be kept in the environment by sudo. The original content of VAR
+   is preserved by sudox (even if VAR is undefined). VAR can be any valid name
+   not special to the shell and not matching sx_[a-z]*
+   Try: COLORS, HOSTNAME, LS_COLORS, PS1, PS2, XAUTHORITY, XAUTHORIZATION
+   If VAR - or '' use the command line for X cookie passing (insecure!)
+-F# or -F#,#a or F#,#a,#b  Use file descriptor # instead of VAR or command line
+   to transfer X cookies. When this option is used, sudox will create sudo only
+   as a child process and wait for its return. The file descriptor # must not
+   be closed by sudo. Auxiliary file descriptors #a and #b must not be used
+   for another purpose (but can be closed by sudo). If #a or #b are not given,
+   they are chosen as (# + 1) or (#a + 1), respectively. Depending on your
+   shell, # #a #b must be less than 10. Typical example: -F3 -C4
+   If # is - then instead of file descriptors a world-readable FIFO in a
+   temporary directory is used for X cookie passing (not very secure)
 -V Print version
 -h Print this help
 If the specified user is empty, nothing is done (succesfully), so that
@@ -316,14 +321,17 @@ sx_script=:
 sx_cenv=false
 sx_lenv=false
 sx_root=
-sx_var=
+sx_var=DISPLAY
 sx_fd=
 Push -c sx_sudoargs
 SetFD() {
 	sx_fd=${1%%,*}
 	sx_fda=
 	sx_fdb=
-	case $1 in
+	case ${1:--} in
+	-)
+		sx_fd=-
+		return 0;;
 	*,*,*,*)
 		Fatal 'only two commas allowed in FD specification';;
 	*,*,*)
@@ -342,9 +350,10 @@ SetFD() {
 }
 ReadOpt() {
 	OPTIND=1
-	while getopts "v:F:lsSepuTUt:xRNHVh?a:C:c:g:r:AbEiKknP" sx_a
+	while getopts "v:F:lsSepuTUt:xRNHVho:a:C:c:g:r:AbEiKknP" sx_a
 	do	case $sx_a in
-		v)	CheckVarname "$OPTARG" && sx_var=$OPTARG;;
+		v)	sx_var=$OPTARG
+			[ x"${sx_var:--}" = x'-' ] || CheckVarname "$sx_var";;
 		F)	SetFD "$OPTARG";;
 		l)	sx_lenv=:;;
 		s)	sx_screen='tmux screen';;
@@ -359,7 +368,9 @@ ReadOpt() {
 		R)	sx_root=:;;
 		N)	sx_root=false;;
 		V)	Version;;
-		[h?])	Usage;;
+		h)	Usage;;
+		'?')	exit 1;;
+		o)	Push sx_sudoxargs "$OPTARG";;
 		[aCcgr])
 			Push sx_sudoargs "-$sx_a" "$OPTARG";;
 		H)	:;;
@@ -520,7 +531,8 @@ CalcDisplays() {
 	if [ -n "${sx_b:++}" ]
 	then	Push -c sx_displays "$sx_b/unix:$sx_a"
 		if [ x"$sx_b" = x'localhost' ]
-		then	HOSTNAME=`hostname 2>/dev/null`
+		then	[ -n "${HOSTNAME:++}" ] \
+				|| HOSTNAME=`hostname 2>/dev/null`
 			Push -c sx_displays "$HOSTNAME:$sx_a" \
 				"$HOSTNAME/unix:$sx_a"
 		fi
@@ -537,55 +549,52 @@ then	CalcDisplays
 	CalcTransferAll
 fi
 
-# Generate FIFO
-if [ -z "${sx_transfer:++}" ] || [ -n "$sx_var" ] || [ -n "$sx_fd" ]
-then	sx_fifo=
-	RmTemp
-else	MkTemp
+if [ x"$sx_fd" = x'-' ] && [ -n "${sx_transfer:++}" ]
+then	# Generate FIFO
+	MkTemp
 	chmod -- 711 "$sx_tmp"
 	sx_fifo=$sx_tmp/fifo
 	( umask 000 && mkfifo -- "$sx_fifo" ) \
 		|| Fatal "cannot create fifo $sx_fifo"
+else	# Without FIFO, tempdir is no longer needed
+	sx_fifo=
+	RmTemp
 fi
 
 # Generate remote command:
 
-TransferVariable() {
-	eval "$1=\$sx_transfer'sudox_magic_separator'\${${1}++}\${${1}-}
-	export $1"
-}
-
-# This must be a function, because we use set --
 GenRemote() {
+	sx_exec=:
 	if ! $sx_xtrans && ! $sx_delx
 	then	if [ -n "${sx_dash:++}" ] || HasDash "$sx_script" "$sx_screen"
 		then	Push sx_sudoargs --
 		fi
 		return
 	fi
-	Push sx_sudoargs --
-	Push sx_sudoargs "$0"
-	# Store SHELL and DISPLAY _before_ TransferVariable,
+	# Store SHELL and DISPLAY _before_ calling Push -c $sx_var
 	# so that they can be used with -v
-	sx_a=${SHELL:-sh}
+	sx_c=${SHELL-}
 	sx_b=
 	! $sx_xtrans || sx_b=${DISPLAY-}
-	sx_c=
+	sx_a=n
 	if [ -n "${sx_transfer:++}" ]
-	then	if [ -n "${sx_var:++}" ]
-		then	TransferVariable "$sx_var"
-			sx_c='$'$sx_var
-		elif [ -n "${sx_fd:++}" ]
-		then	sx_c='&'$sx_fd
-		else	sx_c=$sx_fifo
+	then	if [ -n "${sx_fifo:++}" ]
+		then	sx_a=f$sx_fifo
+			sx_exec=false
+		elif [ -n "$sx_fd" ]
+		then	sx_a=d$sx_fd
+			sx_exec=false
+		elif [ x"$sx_var" = x'-' ] || [ -z "${sx_var:++}" ]
+		then	sx_a=c$sx_transfer
+		else	Push -c $sx_var "$sx_transfer" ${sx_var+"$sx_var"}
+			eval "export $sx_var"
+			sx_a=v$sx_var
 		fi
 	elif $sx_xtrans && $sx_root
-	then	sx_c='~'${XAUTHORITY:-"$HOME/.Xauthority"}
+	then	sx_a=a${XAUTHORITY:-"$HOME/.Xauthority"}
 	fi
-	eval "set -- a $sx_displays"
-	shift
-	Push sx_sudoargs '-remotecall' "$sx_c" \
-		${1+"$@"} '-dispend;' "$sx_a" "$sx_b"
+	Push sx_sudoargs -- "$1" \
+		-remotecall "$sx_a" "$sx_b" "$sx_displays" "$sx_c"
 }
 GenRemote "$0"
 
@@ -606,7 +615,7 @@ shift
 
 # Can we terminate early?
 
-if [ -z "${sx_transfer:++}" ] || [ -n "${sx_var:++}" ]
+if $sx_exec
 then	exec sudo ${1+"$@"}
 	Fatal 'cannot exec sudo'
 fi
@@ -617,15 +626,16 @@ fi
 unset sx_remoteuse sx_sudoargs sx_displays sx_dash have_random \
 sx_askpass sx_untrusted sx_delx sx_timeout sx_xtrans sx_screen sx_script \
 sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind sx_a sx_b sx_c
-unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname \
-AddAuthorities Troyan NonMatch ReadTransfer ParseFifo ParsePipe ParseVariable \
+unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname
+RemoveAuthorities AddAuthorities Troyan NonMatch \
+ReadTransfer ParseFifo ParseFD ParseVariable \
 Version Usage MkTemp SetFD ReadOpt HasDash \
 CalcTransferAll CalcTransferUntrusted CalcDisplays \
 TransferVariable GenRemote 2>/dev/null
 
-if [ -n "$sx_fd" ]
+if [ -z "${sx_fifo:++}" ]
 then	# Passing cookies by FD
-	# Free memory needed only for FIFO:
+	# Free memory which is needed only for FIFO:
 	unset sx_retvalue sx_tmp sx_fifo
 	unset -f RmTemp MyTrap ClearTrap 2>/dev/null
 
@@ -637,7 +647,7 @@ then	# Passing cookies by FD
 {
 printf '\''%s\n%s'\'' "${#sx_transfer}" "$sx_transfer" >&'$sx_fd'
 unset sx_transfer
-}	'$sx_fda'<&- '$sx_fd'>&1 1>&'$sx_fdb' '$sx_fdb'<&- \
+} '$sx_fda'<&- '$sx_fd'>&1 1>&'$sx_fdb' '$sx_fdb'<&- \
 | {
 unset sx_transfer
 sudo ${1+"$@"} '$sx_fdb'<&- '$sx_fd'<&0 0<&'$sx_fda' '$sx_fda'<&-
@@ -648,10 +658,10 @@ fi
 
 # Passing cookies by FIFO
 
-# Free memory needed only for FD:
+# Free memory which is needed only for FD:
 unset sx_fd sx_fda sx_fdb
 
-# Fill fifo:
+# Fill FIFO:
 {
 	printf '%s\n%s' "${#sx_transfer}" "$sx_transfer" >"$sx_fifo"
 	unset sx_transfer
@@ -668,8 +678,8 @@ ClearTrap
 sudo ${1+"$@"}
 sx_retvalue=$?
 [ -z "${sx_fifo:++}" ] || ! test -p "$sx_fifo" || {
-	# If the fifo still exists, we empty it to finish our background job
-	# and thus to clean tmpdir: Avoid removing tmpdir twice as noted above.
+	# If the FIFO still exists, we empty it to finish our background job
+	# and thus to clean tmpdir: avoid removing tmpdir twice as noted above
 	cat -- "$sx_fifo" >/dev/null
 	wait
 }
