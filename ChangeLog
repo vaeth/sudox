@@ -1,5 +1,10 @@
 # ChangeLog for sudox:
 
+*sudox-8.0.1:
+	Martin Väth <martin at mvath.de>:
+	- Use sh
+	- Fix test whether variable was passed
+
 *sudox-8.0.0:
 	Martin Väth <martin at mvath.de>:
 	- Option -vDISPLAY is the new default, because also sudo has the

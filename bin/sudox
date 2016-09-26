@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 # (C) Martin V\"ath <martin@mvath.de>
 set -u
 set -f
@@ -133,7 +133,7 @@ ParseVariable() {
 	*)
 		CheckVarname "$1";;
 	esac
-	eval "[ -n \${${1}++} ]" || Fatal "variable $1 not passed by sudo"
+	eval "[ -n \"\${${1}++}\" ]" || Fatal "variable $1 not passed by sudo"
 	eval "sx_a=\$$1"
 	eval 'set -- "$1" '"$sx_a"
 	if [ $# -eq 2 ]
@@ -191,7 +191,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 8.0.0'
+	Echo 'sudox 8.0.1'
 	exit 0
 }
 
