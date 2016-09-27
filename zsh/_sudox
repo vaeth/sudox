@@ -58,7 +58,7 @@ case $state in
 (fd)
 	local fds
 	fds=(
-	3{,',4'{,',5'}}':file descriptor 3 (auxiliary 4, 5)'
+	3{,',4'}':file descriptor 3 (auxiliary descriptor 4)'
 	'-:pass via FIFO'
 	)
 	_describe -t 'file descriptors' 'file descriptor' fds

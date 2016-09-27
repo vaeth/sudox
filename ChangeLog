@@ -1,5 +1,11 @@
 # ChangeLog for sudox:
 
+*sudox-8.1.0:
+	Martin Väth <martin at mvath.de>:
+	- New code requires only one auxiliary file descriptor for -F.
+	  Thanks again to Helmut Waitzmann <nn.throttle at xoxy.net> in
+	  usenet post <87wphxajjz.fsf@helmutwaitzmann.news.arcor.de>
+
 *sudox-8.0.1:
 	Martin Väth <martin at mvath.de>:
 	- Use sh

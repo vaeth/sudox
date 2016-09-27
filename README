@@ -84,13 +84,13 @@ The sudo process becomes a child of the sudox process (with possible
 security implications about sending signals by an unprivileged user).
 Moreover, sudo must be configured to not close the corresponding file
 descriptor, e.g. by allowing closefrom_override (see the provided sudoers.d).
-To use this method, also two auxiliary file descriptors are needed which should
-not be used for another purpose (these can be closed by sudo).
-Use the sudox option -F# or -F#,#a or -F#,#a,#b to select this method,
-using file descriptor # for X cookie passing and the auxiliary descriptors
-#a and #b. If not specified, #a is (# + 1) and #b is (#a + 1)
+To use this method, also an auxiliary file descriptors is needed which should
+not be used for another purpose (but which can be closed by sudo).
+Use the sudox option -F# or -F#,#a to select this method,
+using file descriptor # for X cookie passing and the auxiliary descriptor #a.
+If not specified, #a is (# + 1)
 Depending on your shell, file descriptors must not be larger than 9.
-A typical example usage is -F3 (which is the same as -F3,4 or -F3,4,5).
+A typical example usage is -F3 (which is the same as -F3,4).
 Unless you configured sudo to use "closefrom=4" (or higher), you have to
 combine this example with the option -C4 (which works only if sudo is
 configured to allow closefrom_override).
