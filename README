@@ -94,12 +94,28 @@ A typical example usage is -F3 (which is the same as -F3,4).
 Unless you configured sudo to use "closefrom=4" (or higher), you have to
 combine this example with the option -C4 (which works only if sudo is
 configured to allow closefrom_override).
+To avoid this sudo configuration, you can also use the file descriptor 0.
+In this case, no auxiliary file descriptor is used and no sudo configuration
+is required, but the standard input of the started sudo process will be
+filtered through a permanently running "cat" process of the user which has -
+besides some security implications - also the disadvantage that standard input
+is delayed until the next newline and advanced terminal features break.
+Therefore, file descriptor 0 is not recommended, but if you cannot change
+your sudo configuration, it might be the only reasonable secure option.
+If you are forced to use this option, it might be reasonable to use something
+like
+  sudox -F0 true user </dev/null && sudox -X user
+which first transfers the X cookies over file descriptor 0, but immediately
+finishes the "cat" process, and then starts the shell without transferring
+X cookies. The disadvantage of this construction in turn is that - depending
+on your sudo configuration - you might have to enter a password twice.
 
 3. Not very secure method: FIFO
 If none of the above methods can be used (e.g. because sudo cannot be
-configured and does not pass any variable or file descriptor), sudox can
-use a FIFO in a randomly generated temporary directory (whose name is
-transferred over a command line) to transfer X cookies.
+configured and does not pass any variable or file descriptor) and you
+do not want to use the file descriptor 0 workaround mentioned above,
+sudox can use a FIFO in a randomly generated temporary directory (whose
+name is transferred over a command line) to transfer X cookies.
 Since the FIFO has to be world readable, this method is insecure, because
 an attacker can read the X cookies from this FIFO until the freshly started
 sudo process reads it. Although sudox will recognize this and stop with an

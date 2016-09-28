@@ -121,27 +121,35 @@ ParseFifo() {
 }
 
 ParseFD() {
-	IsNumber "$1" || Troyan "not a filedescriptpr number '$1'"
+	IsNumber "$1" || Troyan "not a filedescriptor number '$1'"
+	if [ $1 -eq 0 ]
+	then	ReadTransfer
+		return
+	fi
 	# || exit, because redirection might start a subshell
-	eval 'ReadTransfer <&'"$1" || exit
-	eval 'exec '"$1"'<&-'
+	eval 'ReadTransfer <&'$1 || exit
+	eval 'exec '$1'<&-'
 }
 
 ParseVariable() {
 	case $1 in
-	sx_xauthority|sx_display)
-		:;;
+	sx_xauthority)
+		sx_b=XAUTHORITY;;
+	sx_display)
+		sx_b=DISPLAY;;
 	*)
-		CheckVarname "$1";;
+		CheckVarname "$1"
+		sx_b=$1;;
 	esac
-	eval "[ -n \"\${${1}++}\" ]" || Fatal "variable $1 not passed by sudo"
+	eval "[ -n \"\${${1}++}\" ]" ||
+		Fatal "variable $sx_b not passed by sudo"
 	eval "sx_a=\$$1"
 	eval 'set -- "$1" '"$sx_a"
 	if [ $# -eq 2 ]
 	then	eval "unset $1"
 	elif [ $# -eq 3 ]
 	then	eval "$1=\$3"
-	else	Fatal "variable $1 not passed unmodified by sudo"
+	else	Fatal "variable $sx_b not passed unmodified by sudo"
 	fi
 	eval "AddAuthorities $2"
 }
@@ -192,7 +200,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 8.1.0'
+	Echo 'sudox 8.2.0'
 	exit 0
 }
 
@@ -220,7 +228,8 @@ If the variable SUDOX_OPT is set, its options are used as default
    This option is ignored without -u
 -U Delete all related X authority data of the new user (similar to -ut1).
    If combined with -r, the new user might have access to X anyway
--x Do not transfer any X authority data. If this option is used, -u is ignored
+-x Do not transfer X cookies, DISPLAY or SHELL. Also ignore -u
+-X As -x but transfer DISPLAY and SHELL even if sudo does not pass this data
 -R Use root mode: Assume that XAUTHORITY (defaults to ~/.Xauthority) can be
    read by the destination user, and set XAUTHORITY instead of cookie passing.
    This is the default if user is root and -u is not specified
@@ -232,12 +241,13 @@ If the variable SUDOX_OPT is set, its options are used as default
    not special to the shell and not matching sx_[a-z]*
    Try: COLORS, HOSTNAME, LS_COLORS, PS1, PS2, XAUTHORITY, XAUTHORIZATION
    If VAR - or '' use the command line for X cookie passing (insecure!)
--F# or -F#,#a  (typical example: -F3 -C4)  Use file descriptor # instead of VAR
-   or command line to transfer X cookies. With this option, sudox will create
-   sudo as a child process and wait for its return. File descriptor # must not
-   be closed by sudo. An auxiliary file descriptor #a must not be used for
-   another purpose (but can be closed by sudo). If #a is not specified, (# + 1)
-   is chosen. Depending on your shell, # and #a must be at most 9.
+-F# or -F#,#a  Use file descriptor # instead of VAR or command line to transfer
+   X cookies. With this option, sudox will create sudo as a child and wait for
+   its return. If #=0 the standard input is filtered through a \"cat\" process.
+   Otherwise, # must be at least 3 and not closed by sudo. In this case, an
+   auxiliary file descriptor #a must also not be used for another purpose
+   (but can be closed by sudo); if #a is not specified, (# + 1) is chosen.
+   Depending on your shell, # and #a must be at most 9.
    If # is - (option -F-) then instead of file descriptors a world-readable
    FIFO in a temporary directory is used for X cookie passing (not very secure)
 -V Print version
@@ -316,6 +326,7 @@ sx_untrusted=false
 sx_delx=false
 sx_timeout=0
 sx_xtrans=:
+sx_dtrans=:
 sx_screen=
 sx_script=:
 sx_cenv=false
@@ -324,6 +335,7 @@ sx_root=
 sx_var=DISPLAY
 sx_fd=
 Push -c sx_sudoargs
+
 SetFD() {
 	sx_fd=${1%%,*}
 	sx_fda=
@@ -332,19 +344,28 @@ SetFD() {
 		sx_fd=-
 		return 0;;
 	*,*,*)
-		Fatal 'only one commas allowed in FD specification';;
+		Fatal 'only one comma allowed in FD specification';;
 	*,*)
 		sx_fda=${1#*,};;
 	esac
 	IsNumber "$sx_fd" && IsNumber "${sx_fda:-0}" \
 		|| Fatal 'file descriptor must be a number'
-	if [ $sx_fd -lt 3 ] || [ ${sx_fda:-3} -lt 3 ]
-	then	Fatal 'file descriptor number must be at least 3'
-	fi
+	# strip spaces:
+	sx_fd=$(( $sx_fd )) || \
+		Fatal 'file descriptor has strange number format'
+	[ $sx_fd -ne 0 ] || return 0
+	[ $sx_fd -ge 3 ] || \
+		Fatal 'file descriptor number must be 0 or at least 3'
+	[ -n "$sx_fda" ] || return 0
+	sx_fda=$(( $sx_fda )) || \
+		Fatal 'auxiliary file descriptor has strange number format'
+	[ $sx_fda -ge 3 ] || \
+		Fatal 'auxiliary file descriptor number must be at least 3'
 }
+
 ReadOpt() {
 	OPTIND=1
-	while getopts "v:F:lsSepuTUt:xRNHVho:a:C:c:g:r:AbEiKknP" sx_a
+	while getopts "v:F:lsSepuTUt:xXRNHVho:a:C:c:g:r:AbEiKknP" sx_a
 	do	case $sx_a in
 		v)	sx_var=$OPTARG
 			[ x"${sx_var:--}" = x'-' ] || CheckVarname "$sx_var";;
@@ -358,7 +379,8 @@ ReadOpt() {
 		u)	sx_untrusted=:;;
 		t)	sx_timeout=$OPTARG;;
 		U)	sx_delx=:;;
-		x)	sx_xtrans=false;;
+		x)	sx_dtrans=false;;
+		X)	sx_xtrans=false;;
 		R)	sx_root=:;;
 		N)	sx_root=false;;
 		V)	Version;;
@@ -416,6 +438,7 @@ fi
 
 # Implicit option dependencies
 
+$sx_dtrans || sx_xtrans=false
 $sx_xtrans || sx_untrusted=false
 ! $sx_untrusted || sx_root=false
 [ -n "$sx_root" ] || if [ "$sx_remoteuse" = 'root' ]
@@ -559,7 +582,7 @@ fi
 
 GenRemote() {
 	sx_exec=:
-	if ! $sx_xtrans && ! $sx_delx
+	if ! $sx_dtrans && ! $sx_delx
 	then	if [ -n "${sx_dash:++}" ] || HasDash "$sx_script" "$sx_screen"
 		then	Push sx_sudoargs --
 		fi
@@ -569,7 +592,7 @@ GenRemote() {
 	# so that they can be used with -v
 	sx_c=${SHELL-}
 	sx_b=
-	! $sx_xtrans || sx_b=${DISPLAY-}
+	! $sx_dtrans || sx_b=${DISPLAY-}
 	sx_a=n
 	if [ -n "${sx_transfer:++}" ]
 	then	if [ -n "${sx_fifo:++}" ]
@@ -618,8 +641,9 @@ fi
 
 # Free memory:
 unset sx_remoteuse sx_sudoargs sx_displays sx_dash have_random \
-sx_askpass sx_untrusted sx_delx sx_timeout sx_xtrans sx_screen sx_script \
-sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind sx_a sx_b sx_c
+sx_askpass sx_untrusted sx_delx sx_timeout sx_xtrans sx_dtrans \
+sx_screen sx_script sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind \
+sx_a sx_b sx_c
 unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname
 RemoveAuthorities AddAuthorities Troyan NonMatch \
 ReadTransfer ParseFifo ParseFD ParseVariable \
@@ -632,6 +656,20 @@ then	# Passing cookies by FD
 	# Free memory which is needed only for FIFO:
 	unset sx_retvalue sx_tmp sx_fifo
 	unset -f RmTemp MyTrap ClearTrap 2>/dev/null
+
+	# Special case of file descriptor 0
+	if [ $sx_fd -eq 0 ]
+	then	unset sx_fda
+		{
+			printf '%s\n%s' "${#sx_transfer}" "$sx_transfer"
+			unset sx_transfer
+			cat
+		} | {
+			unset sx_transfer
+			sudo ${1+"$@"}
+		}
+		exit
+	fi
 
 	[ -n "$sx_fda" ] || sx_fda=$(( $sx_fd + 1 ))
 	# The idea of this dup magic is due to

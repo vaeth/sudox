@@ -22,7 +22,8 @@ _arguments -C -s -S -A '-*' : $opts \
 '(-R -N)-u[Generate only an untrusted permission]' \
 '-t+[Use specified time for untrusted permission]:time:(0)' \
 '(-u -t)-U[Delete X remote authority similar to -ut1]' \
-'(-u -t)-x[Do not transfer any X authority data]' \
+'(-u -t -X)-x[Do not transfer X cookies, DISPLAY, SHELL]' \
+'(-u -t)-X[Do not transfer X cookies]' \
 '-R[Force root mode]' \
 '-N[Force non-root mode]' \
 '*-o+[Pass specified option to sudo]:sudo option:()' \
@@ -58,7 +59,8 @@ case $state in
 (fd)
 	local fds
 	fds=(
-	3{,',4'}':file descriptor 3 (auxiliary descriptor 4)'
+	'3'{,',4'}':file descriptor 3 (auxiliary descriptor 4)'
+	'0:file descriptor 0 and using a cat process'
 	'-:pass via FIFO'
 	)
 	_describe -t 'file descriptors' 'file descriptor' fds

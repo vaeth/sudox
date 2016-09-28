@@ -1,5 +1,10 @@
 # ChangeLog for sudox:
 
+*sudox-8.2.0:
+	Martin Väth <martin at mvath.de>:
+	- New -F0 special case using cat
+	- New option -X to support sudo -F0 user true >/dev/null && sudo -X ...
+
 *sudox-8.1.0:
 	Martin Väth <martin at mvath.de>:
 	- New code requires only one auxiliary file descriptor for -F.
