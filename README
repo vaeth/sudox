@@ -81,39 +81,37 @@ an open file descriptor to pass X cookies. This method is secure, but only
 suboptimal, because sudox still needs to keep a process running to fill
 the descriptor and cannot terminate until the sudo program returns:
 The sudo process becomes a child of the sudox process (with possible
-security implications about sending signals by an unprivileged user).
-Moreover, sudo must be configured to not close the corresponding file
-descriptor, e.g. by allowing closefrom_override (see the provided sudoers.d).
-To use this method, also an auxiliary file descriptors is needed which should
-not be used for another purpose (but which can be closed by sudo).
-Use the sudox option -F# or -F#,#a to select this method,
-using file descriptor # for X cookie passing and the auxiliary descriptor #a.
-If not specified, #a is (# + 1)
-Depending on your shell, file descriptors must not be larger than 9.
-A typical example usage is -F3 (which is the same as -F3,4).
+security implications about sending signals to an unprivileged process).
+Use the sudox option -F# or -F#,#a to use this method with file descriptor #
+as channel for X cookie passing and an auxiliary file descriptor #a.
+As # you can either use some unused descriptor (at least 3) or the
+standard input 0. Depending on your shell, # and #a must be at most 9.
+
+a) If # is at least 3 then sudo must be configured to not close this file
+descriptor, e.g. by allowing closefrom_override (see the provided sudoers.d)
+and passing a correpesponding -C option. To use this mode, also #a is needed
+which should be at least 3 and not be used for another purpose (but which
+can be closed by sudo). If #a is not specified or empty, (# + 1) is chosen.
+A typical example usage of this option is -F3 (which is the same as -F3,4).
 Unless you configured sudo to use "closefrom=4" (or higher), you have to
 combine this example with the option -C4 (which works only if sudo is
-configured to allow closefrom_override).
-To avoid this sudo configuration, you can also use the file descriptor 0.
-In this case, no auxiliary file descriptor is used and no sudo configuration
-is required, but the standard input of the started sudo process will be
-filtered through a permanently running "cat" process of the user which has -
-besides some security implications - also the disadvantage that standard input
-is delayed until the next newline and advanced terminal features break.
-Therefore, file descriptor 0 is not recommended, but if you cannot change
-your sudo configuration, it might be the only reasonable secure option.
-If you are forced to use this option, it might be reasonable to use something
-like
-  sudox -F0 true user </dev/null && sudox -X user
-which first transfers the X cookies over file descriptor 0, but immediately
-finishes the "cat" process, and then starts the shell without transferring
-X cookies. The disadvantage of this construction in turn is that - depending
-on your sudo configuration - you might have to enter a password twice.
+configured to allow closefrom_override):
+	sudox -F3 -C4 user command
+
+b) If # is 0 then no special sudo configuration is needed. However, the
+executed command will have its standard input (0) closed. If you specify
+#a as 0 then the "cat" command will be used to pipe standard input to the
+standard input of the executed command, but the latter will break most
+interactive programs and also has security implication (cat runs as the
+calling user). Therefore, it is recommended to use -F0 only with programs
+which do not expect standard input. To first transfer X cookies and then
+to call an interactive program you can instead call sudox twice:
+	sudox -F0 user true && sudox -X user [command ...]
 
 3. Not very secure method: FIFO
 If none of the above methods can be used (e.g. because sudo cannot be
 configured and does not pass any variable or file descriptor) and you
-do not want to use the file descriptor 0 workaround mentioned above,
+do not want to use the file descriptor 0 workaround by calling sudox twice,
 sudox can use a FIFO in a randomly generated temporary directory (whose
 name is transferred over a command line) to transfer X cookies.
 Since the FIFO has to be world readable, this method is insecure, because
@@ -127,7 +125,7 @@ Another disadvantage of the method is the same as that of 2:
 sudox needs to keep a process running to fill the FIFO and cannot terminate
 until the sudo program returns: The sudo process bcomes a child of sudox.
 To select this method with sudox, use the option -F- (which is the same
-option as for the "File descriptors" method but with the argument FD=-).
+option as for 2. but with # being -).
 
 4. Insecure method: Command line
 As a final fallback, the X cookies can be passed by the command line.

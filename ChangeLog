@@ -1,5 +1,10 @@
 # ChangeLog for sudox:
 
+*sudox-8.3.0:
+	Martin Väth <martin at mvath.de>:
+	- New option -O to restore/keep original HOME
+	- New/changed option: Let -F0 close stdin. Use -F0,0 for cat piping
+
 *sudox-8.2.0:
 	Martin Väth <martin at mvath.de>:
 	- New -F0 special case using cat

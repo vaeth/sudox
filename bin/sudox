@@ -22,13 +22,13 @@ SHELL_OPTS=
 #
 # "$0" -remotecall \
 #        a"$XAUTHORITY"|v$VAR|c"$COOKIE"|d$FD|f"$FIFO"|n \
-#        "$DISPLAY" \
+#        "$DISPLAY"|"" \
 #        "$display_removal" \
 #        "$SHELL" \
+#        "$HOME"|"" \
 #        command [args for command]
 #
-# The cookies are not passed as an arg but via the FIFO, through VAR,
-# or by setting XAUTHORITY.
+# The cookies are expected according to the second argument above
 
 # First, some helper functions needed for both parts of the script:
 
@@ -155,7 +155,7 @@ ParseVariable() {
 }
 
 if [ x"${1-}" = x'-remotecall' ]
-then	[ $# -ge 5 ] || NonMatch 'not enough remote args'
+then	[ $# -ge 6 ] || NonMatch 'not enough remote args'
 	# set DISPLAY and XAUTHORITY for {Add,Remove}Authorities, but
 	# save previous values for ParseVariable
 	sx_display=${DISPLAY-}
@@ -187,12 +187,16 @@ then	[ $# -ge 5 ] || NonMatch 'not enough remote args'
 	*)
 		NonMatch 'bad transfer mode';;
 	esac
-	# Set SHELL _after_ ParseVariable
+	# Set SHELL and HOME _after_ ParseVariable
 	[ -z "${5:++}" ] || {
 		SHELL=$5
 		export SHELL
 	}
-	shift 5
+	[ -z "${6:++}" ] || {
+		HOME=$6
+		export HOME
+	}
+	shift 6
 	SUDO_COMMAND=${*-}
 	DoExec ${1+"$@"}
 fi
@@ -200,24 +204,28 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 8.2.0'
+	Echo 'sudox 8.3.0'
 	exit 0
 }
 
 Usage() {
 	Echo "Usage: ${0##*/} [options] [user [command]]
-Similar to sudo -H [-s] but transfer also X cookies
+Similar to sudo [-s] but transfer also X cookies
 If the variable SUDOX_OPT is set, its options are used as default
 -oOPT  add OPT to the list of options (arguments) passed to sudo
    This option can be used repeatedly, all OPT values being accumulated.
    In addition to -o, the one-letter options -a, -C -c, -g, -r (each with arg)
    and -A -b -E -i -K -k -n -P (each without arg) are directly passed to sudo
--H is accepted but ignored (note that -H is passed to sudo anyway)
 -l Clear STY/TMUX for the command/session (mnemonic: login environment)
 -s Start a tmux (fallback to screen) session
 -S Start a screen (fallback to tmux) session
 -e Work only if not in a screen/tmux environment (STY/TMUX)
 -p Without this option, -A is passed to sudo when SUDO_ASKPASS is set
+-O Without this option, HOME is set according to the new user. With -O, HOME
+   is restored after setting X authorities, or option -H is not passed to sudo.
+   sudo might need to be configured to keep the HOME environment variable
+   and to not use always_set_home.
+-H Cancel a previous -O (analogous to sudo -H)
 -T Do not call \"script\" to open a new tty (security risk if tty is used!)
    If -xT are used but not -s/-S/-U then act similar to \"sudo -H -u user --\"
    This is useful if special entries in /etc/sudoers should be prepared.
@@ -241,14 +249,20 @@ If the variable SUDOX_OPT is set, its options are used as default
    not special to the shell and not matching sx_[a-z]*
    Try: COLORS, HOSTNAME, LS_COLORS, PS1, PS2, XAUTHORITY, XAUTHORIZATION
    If VAR - or '' use the command line for X cookie passing (insecure!)
--F# or -F#,#a  Use file descriptor # instead of VAR or command line to transfer
-   X cookies. With this option, sudox will create sudo as a child and wait for
-   its return. If #=0 the standard input is filtered through a \"cat\" process.
-   Otherwise, # must be at least 3 and not closed by sudo. In this case, an
-   auxiliary file descriptor #a must also not be used for another purpose
-   (but can be closed by sudo); if #a is not specified, (# + 1) is chosen.
+-F# or -F#,#a  Use file descriptor # and auxiliary descriptor #a instead of VAR
+   or command line to transfer X cookies. With this option, sudox will create
+   sudo as a child and wait for its return. # must be 0 or at least 3 or \"-\".
    Depending on your shell, # and #a must be at most 9.
-   If # is - (option -F-) then instead of file descriptors a world-readable
+   a) If # is at least 3, sudo must be configured to not close this descriptor.
+   In this case, #a must be at least 3 and must not be used otherwise (but it
+   can be closed by sudo). If #a is not specified or empty, (# + 1) is chosen.
+   Recommended example: sudox -F3 -C4 user command
+   b) If # is 0, no sudo configuration is necessary. #a must not be specified
+   (or empty) or be 0. In the former case, standard input will be closed for
+   the executed command, in the latter case \"cat\" will be used to pipe
+   standard input to the command, breaking most interactive programs.
+   Recommended example: sudox -F0 user true && sudox -X user [command ...]
+   c) If # is \"-\" (-F-) then instead of a file descriptor a world-readable
    FIFO in a temporary directory is used for X cookie passing (not very secure)
 -V Print version
 -h Print this help
@@ -322,6 +336,7 @@ MkTemp() {
 # Parse options
 
 sx_askpass=:
+sx_home=:
 sx_untrusted=false
 sx_delx=false
 sx_timeout=0
@@ -353,7 +368,10 @@ SetFD() {
 	# strip spaces:
 	sx_fd=$(( $sx_fd )) || \
 		Fatal 'file descriptor has strange number format'
-	[ $sx_fd -ne 0 ] || return 0
+	if [ $sx_fd -eq 0 ]
+	then	[ ${sx_fda:-0} -ne 0 ] || return 0
+		Fatal 'with -F0, auxiliary file descriptor must be empty or 0'
+	fi
 	[ $sx_fd -ge 3 ] || \
 		Fatal 'file descriptor number must be 0 or at least 3'
 	[ -n "$sx_fda" ] || return 0
@@ -365,7 +383,7 @@ SetFD() {
 
 ReadOpt() {
 	OPTIND=1
-	while getopts "v:F:lsSepuTUt:xXRNHVho:a:C:c:g:r:AbEiKknP" sx_a
+	while getopts "v:F:lsSepHOuTUt:xXRNVho:a:C:c:g:r:AbEiKknP" sx_a
 	do	case $sx_a in
 		v)	sx_var=$OPTARG
 			[ x"${sx_var:--}" = x'-' ] || CheckVarname "$sx_var";;
@@ -375,6 +393,8 @@ ReadOpt() {
 		S)	sx_screen='screen tmux';;
 		e)	sx_cenv=:;;
 		p)	sx_askpass=false;;
+		H)	sx_home=:;;
+		O)	sx_home=;;
 		T)	sx_script=;;
 		u)	sx_untrusted=:;;
 		t)	sx_timeout=$OPTARG;;
@@ -389,7 +409,6 @@ ReadOpt() {
 		o)	Push sx_sudoxargs "$OPTARG";;
 		[aCcgr])
 			Push sx_sudoargs "-$sx_a" "$OPTARG";;
-		H)	:;;
 		*)	Push sx_sudoargs "-$sx_a";;
 		esac
 	done
@@ -427,7 +446,6 @@ fi
 
 # Parse remainder
 
-Push sx_sudoargs -H
 sx_remoteuse=root
 if [ $# -gt 0 ]
 then	sx_remoteuse=$1
@@ -584,15 +602,19 @@ GenRemote() {
 	sx_exec=:
 	if ! $sx_dtrans && ! $sx_delx
 	then	if [ -n "${sx_dash:++}" ] || HasDash "$sx_script" "$sx_screen"
-		then	Push sx_sudoargs --
+		then	Push sx_sudoargs ${sx_home:+-H} --
 		fi
 		return
 	fi
-	# Store SHELL and DISPLAY _before_ calling Push -c $sx_var
-	# so that they can be used with -v
-	sx_c=${SHELL-}
+	# Store DISPLAY, SHELL, HOME _before_ calling Push -c $sx_var
+	# because sx_var might have these values...
 	sx_b=
 	! $sx_dtrans || sx_b=${DISPLAY-}
+	sx_c=${SHELL-}
+	if [ -n "$sx_home" ]
+	then	sx_home=
+	else	sx_home=$HOME
+	fi
 	sx_a=n
 	if [ -n "${sx_transfer:++}" ]
 	then	if [ -n "${sx_fifo:++}" ]
@@ -610,8 +632,8 @@ GenRemote() {
 	elif $sx_xtrans && $sx_root
 	then	sx_a=a${XAUTHORITY:-"$HOME/.Xauthority"}
 	fi
-	Push sx_sudoargs -- "$1" \
-		-remotecall "$sx_a" "$sx_b" "$sx_displays" "$sx_c"
+	Push sx_sudoargs -H -- "$1" \
+		-remotecall "$sx_a" "$sx_b" "$sx_displays" "$sx_c" "$sx_home"
 }
 GenRemote "$0"
 
@@ -631,7 +653,6 @@ eval "set -- a $sx_sudoargs"
 shift
 
 # Can we terminate early?
-
 if $sx_exec
 then	exec sudo ${1+"$@"}
 	Fatal 'cannot exec sudo'
@@ -641,7 +662,7 @@ fi
 
 # Free memory:
 unset sx_remoteuse sx_sudoargs sx_displays sx_dash have_random \
-sx_askpass sx_untrusted sx_delx sx_timeout sx_xtrans sx_dtrans \
+sx_askpass sx_home sx_untrusted sx_delx sx_timeout sx_xtrans sx_dtrans \
 sx_screen sx_script sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind \
 sx_a sx_b sx_c
 unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname
@@ -659,13 +680,19 @@ then	# Passing cookies by FD
 
 	# Special case of file descriptor 0
 	if [ $sx_fd -eq 0 ]
-	then	unset sx_fda
+	then
+		if [ -n "$sx_fda" ]
+		then	sx_a=cat
+		else	sx_a='exec 0<&- 1>&-'
+		fi
+		unset sx_fd sx_fda
+		sx_a='unset sx_transfer sx_a
+'$sx_a
 		{
 			printf '%s\n%s' "${#sx_transfer}" "$sx_transfer"
-			unset sx_transfer
-			cat
+			eval "$sx_a"
 		} | {
-			unset sx_transfer
+			unset sx_transfer sx_a
 			sudo ${1+"$@"}
 		}
 		exit

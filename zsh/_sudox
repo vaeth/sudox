@@ -18,6 +18,8 @@ _arguments -C -s -S -A '-*' : $opts \
 '-S[Start a screen/tmux session]' \
 '-e[Require empty STY/TMUX]' \
 '-p[Ignore ASKPASS]' \
+'-O[keep/restore original HOME]' \
+'-H[Update HOME (default)]' \
 '-T[Do not call script - danger when interactive]' \
 '(-R -N)-u[Generate only an untrusted permission]' \
 '-t+[Use specified time for untrusted permission]:time:(0)' \
@@ -40,7 +42,6 @@ _arguments -C -s -S -A '-*' : $opts \
 '-c+[sudo specify class]:class:()' \
 '-g+[sudo specify group]:group:_groups' \
 '-r+[sudo specify rule]:rule:()' \
-'-H[sudo --set-home (default)]' \
 '(1 * -)-V[Print version]' \
 '(1 * -)-h[Print help]' \
 '1:user name:_users' \
@@ -60,7 +61,8 @@ case $state in
 	local fds
 	fds=(
 	'3'{,',4'}':file descriptor 3 (auxiliary descriptor 4)'
-	'0:file descriptor 0 and using a cat process'
+	'0:file descriptor 0, closing stdin'
+	'0,0:file descriptor 0, pipe with a cat process'
 	'-:pass via FIFO'
 	)
 	_describe -t 'file descriptors' 'file descriptor' fds
