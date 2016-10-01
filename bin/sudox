@@ -204,13 +204,13 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 8.3.0'
+	Echo 'sudox 8.3.1'
 	exit 0
 }
 
 Usage() {
 	Echo "Usage: ${0##*/} [options] [user [command]]
-Similar to sudo [-s] but transfer also X cookies
+Similar to sudo -H [-s] but transfer also X cookies and use a new tty
 If the variable SUDOX_OPT is set, its options are used as default
 -oOPT  add OPT to the list of options (arguments) passed to sudo
    This option can be used repeatedly, all OPT values being accumulated.
@@ -258,10 +258,10 @@ If the variable SUDOX_OPT is set, its options are used as default
    can be closed by sudo). If #a is not specified or empty, (# + 1) is chosen.
    Recommended example: sudox -F3 -C4 user command
    b) If # is 0, no sudo configuration is necessary. #a must not be specified
-   (or empty) or be 0. In the former case, standard input will be closed for
-   the executed command, in the latter case \"cat\" will be used to pipe
-   standard input to the command, breaking most interactive programs.
-   Recommended example: sudox -F0 user true && sudox -X user [command ...]
+   (or empty) or 0: In the latter case (-F0,0) \"cat\" will be used to pipe the
+   input to the command; use this only when sudox is at the end of a pipe.
+   In the former case (-F0), input will be closed. Recommendation: Use with -T
+   Recommended example: sudox -TF0 user true && sudox -X user [command ...]
    c) If # is \"-\" (-F-) then instead of a file descriptor a world-readable
    FIFO in a temporary directory is used for X cookie passing (not very secure)
 -V Print version
@@ -645,8 +645,8 @@ then	if [ -n "${sx_screen:++}" ]
 	Push sx_sudoargs "$sx_script" -q -e \
 		${sx_a:+-c} ${sx_a:+"$sx_a"} /dev/null
 else	if [ -n "${sx_screen:++}" ]
-	then	Push -c sx_sudoargs "$sx_screen" $sx_dash ${1+"$@"}
-	else	Push -c sx_sudoargs ${1+"$@"}
+	then	Push sx_sudoargs "$sx_screen" $sx_dash ${1+"$@"}
+	else	Push sx_sudoargs ${1+"$@"}
 	fi
 fi
 eval "set -- a $sx_sudoargs"

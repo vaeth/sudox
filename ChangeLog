@@ -1,5 +1,10 @@
 # ChangeLog for sudox:
 
+*sudox-8.3.1:
+	Martin Väth <martin at mvath.de>:
+	- Fix -T (regression introduced in sudox-5.0.0)
+	- Recommend to combine -F0 with -T
+
 *sudox-8.3.0:
 	Martin Väth <martin at mvath.de>:
 	- New option -O to restore/keep original HOME

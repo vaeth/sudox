@@ -104,9 +104,11 @@ executed command will have its standard input (0) closed. If you specify
 standard input of the executed command, but the latter will break most
 interactive programs and also has security implication (cat runs as the
 calling user). Therefore, it is recommended to use -F0 only with programs
-which do not expect standard input. To first transfer X cookies and then
-to call an interactive program you can instead call sudox twice:
-	sudox -F0 user true && sudox -X user [command ...]
+which do not expect standard input. In this case, it is recommended to
+combine this with -T.
+To first transfer X cookies and then to call an interactive program you can
+instead call sudox twice:
+	sudox -TF0 user true && sudox -X user [command ...]
 
 3. Not very secure method: FIFO
 If none of the above methods can be used (e.g. because sudo cannot be
