@@ -50,7 +50,9 @@ Fatal() {
 }
 
 Push() {
-	. push.sh
+	PushA_=`push.sh 2>/dev/null` || Fatal \
+"push.sh from https://github.com/vaeth/push (v2.0 or newer) required"
+	eval "$PushA_"
 	Push "$@"
 }
 
@@ -204,7 +206,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 8.3.1'
+	Echo 'sudox 9.0.0'
 	exit 0
 }
 

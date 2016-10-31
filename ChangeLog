@@ -1,5 +1,10 @@
 # ChangeLog for sudox:
 
+*sudox-9.0.0:
+	Martin Väth <martin at mvath.de>:
+	- Make sudoxe a program for usage with eval
+	- Require >=push-v2.0 to provide a more descriptive error message
+
 *sudox-8.3.1:
 	Martin Väth <martin at mvath.de>:
 	- Fix -T (regression introduced in sudox-5.0.0)

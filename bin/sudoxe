@@ -1,5 +1,6 @@
-#!/bin/sh - this line is only for editors. This script _must_ be sourced
-# We use ${PATH-} for comtability with set -u
+#!/usr/bin/env cat
+# eval this output or source this script
+# We use ${PATH-} for compability with set -u
 sudox() {
 PATH=/sbin:/bin:/usr/sbin:/usr/bin${PATH:+:}${PATH-} command sudox ${1+"$@"}
 }

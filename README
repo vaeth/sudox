@@ -20,18 +20,29 @@ password, a wrong password will terminate your session anyway.
 
 Installation:
 
-For installation, copy sudox bin/* to your $PATH and add the line
+For installation, copy bin/* to your $PATH and add code like
+
+if SOME_VARIABLE=`sudoxe 2>/dev/null`
+then	eval "$SOME_VARIABLE"
+else	echo 'sudoxe not found' >&2
+fi
+
+to your shell startup file. Alternatively, you can also simply use
 
 . sudoxe
 
-to your shell startup file to define the shell functions sudox() and sudoxe()
+but the latter has the disadvantage that your shell will die if sudoxe
+cannot be found.
+
+The above code will define the shell functions sudox() and sudoxe()
 (sudox() calls sudox with a secure PATH setting). Alternatively, add these
 functions or modifications thereof directly to your shell startup file.
 
 To obtain support for zsh completion, you can copy zsh/* to a directory
 of zsh's $fpath
 
-You need push.sh from https://github.com/vaeth/push in your $PATH as well.
+You need push.sh from https://github.com/vaeth/push (v2.0 or newer)
+in your $PATH as well.
 
 For Gentoo, there is an ebuild in the mv overlay (available by layman).
 
