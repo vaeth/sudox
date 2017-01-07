@@ -55,8 +55,7 @@ case $state in
 	'-:pass via command line'
 	{COLORTERM,LANG{,UAGE},LC_{ALL,CTYPE,NUMERIC,TIME,COLLATE,MONETARY,MESSAGES,PAPER,NAME,ADDRESS,TELEPHONE,MEASUREMENT,IDENTIFICATION,ALL},LINGUAS,TERM,TZ}':checked by sudo default'
 	)
-	_describe -t variables 'variable' vars
-	ret=$?;;
+	_describe -t variables 'variable' vars && ret=0;;
 (fd)
 	local fds
 	fds=(
@@ -65,7 +64,6 @@ case $state in
 	'0,0:file descriptor 0, pipe with a cat process'
 	'-:pass via FIFO'
 	)
-	_describe -t 'file descriptors' 'file descriptor' fds
-	ret=$?;;
+	_describe -t 'file descriptors' 'file descriptor' fds && ret=0;;
 esac
 return ret
