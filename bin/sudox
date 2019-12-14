@@ -206,7 +206,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 9.0.1'
+	Echo 'sudox 9.1'
 	exit 0
 }
 
@@ -667,7 +667,7 @@ unset sx_remoteuse sx_sudoargs sx_displays sx_dash have_random \
 sx_askpass sx_home sx_untrusted sx_delx sx_timeout sx_xtrans sx_dtrans \
 sx_screen sx_script sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind \
 sx_a sx_b sx_c
-unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname
+unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname \
 RemoveAuthorities AddAuthorities Troyan NonMatch \
 ReadTransfer ParseFifo ParseFD ParseVariable \
 Version Usage MkTemp SetFD ReadOpt HasDash \

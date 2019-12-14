@@ -1,5 +1,13 @@
 # ChangeLog for sudox:
 
+*sudox-9.1:
+	Martin Väth <mvath at google.com>:
+	- Fix typo in unsetting functions when not early terminating (FIFO/FD)
+
+*sudox-9.0.1:
+	Martin Väth <martin at mvath.de>:
+	- Fix completion for >=zsh-5.3
+
 *sudox-9.0.0:
 	Martin Väth <martin at mvath.de>:
 	- Make sudoxe a program for usage with eval
