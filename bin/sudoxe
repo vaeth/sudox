@@ -1,5 +1,7 @@
 #!/usr/bin/env cat
 # eval this output or source this script
+# SPDX-License-Identifier: BSD-3-Clause
+
 # We use ${PATH-} for compability with set -u
 sudox() {
 PATH=/sbin:/bin:/usr/sbin:/usr/bin${PATH:+:}${PATH-} command sudox ${1+"$@"}

@@ -1,4 +1,5 @@
 #compdef sudox sudoxe
+# SPDX-License-Identifier: BSD-3-Clause
 local curcontext="$curcontext" state state_descr line
 typeset -A opt_args
 local opts

@@ -1,7 +1,11 @@
 # ChangeLog for sudox:
 
+*sudox-9.1.1:
+	Martin Väth <martin at mvath.de>:
+	- Add SPDX-License-Identifier
+
 *sudox-9.1:
-	Martin Väth <mvath at google.com>:
+	Martin Väth <martin at mvath.de>:
 	- Fix typo in unsetting functions when not early terminating (FIFO/FD)
 
 *sudox-9.0.1:

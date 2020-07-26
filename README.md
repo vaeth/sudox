@@ -2,6 +2,7 @@
 
 (C) Martin Väth (martin at mvath.de).
 This project is under the BSD license 2.0 (“3-clause BSD license”).
+SPDX-License-Identifier: BSD-3-Clause
 
 sudox is a POSIX shell script which acts as a wrapper for
 `sudo -H` [`-s`] which can pass X cookies

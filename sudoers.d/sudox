@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 #The following is needed for sudox -vDISPLAY (which is the default).
 #Note that env_keep contains DISPLAY by default unless you explicitiy reset it
 #Defaults env_keep+="DISPLAY"

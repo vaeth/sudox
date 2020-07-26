@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
 # (C) Martin V\"ath <martin@mvath.de>
+# SPDX-License-Identifier: BSD-3-Clause
 set -u
 set -f
 
@@ -206,7 +207,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 9.1'
+	Echo 'sudox 9.1.1'
 	exit 0
 }
 
