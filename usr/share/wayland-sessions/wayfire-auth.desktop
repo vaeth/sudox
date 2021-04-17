@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Wayfire-auth
+Comment=wayfire session with proper env vars and xauth support
+Exec=wayfire-auth
+TryExec=wayfire
+Icon=
+Type=Application
+DesktopNames=Wayfire-auth

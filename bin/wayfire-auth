@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+set -u
+set -e
+
+XDG_SESSION_TYPE=wayland
+export XDG_SESSION_TYPE
+
+# Enable wayland for Gdk/Gtk+
+# wayland does not work yet with emacs, and x11 prevents wayfire from starting
+#GDK_BACKEND=wayland # x11
+#export GDK_BACKEND
+
+# Enable wayland for QT
+QT_QPA_PLATFORM=wayland-egl
+export QT_QPA_PLATFORM
+
+# Enable wayland for SDL
+SDL_VIDEODRIVER=wayland
+export SDL_VIDEODRIVER
+
+# Enable wayland for Firefox
+MOZ_ENABLE_WAYLAND=1
+export MOZ_ENABLE_WAYLAND
+
+# Enable wayland for Clutter
+CLUTTER_BACKEND=wayland
+export CLUTTER_BACKEND
+
+# Enable wayland for Elementary
+ELM_DISPLAY=wl
+export ELM_DISPLAY
+
+ELM_ACCEL=opengl
+export ELM_ACCEL
+
+# Enable wayland for Enlightenment/Ecore
+ECORE_EVAS_ENGINE=wayland_egl # wayland_shm
+export ECORE_EVAS_ENGINE
+
+WLR_XWAYLAND=`command -v xwayland-auth`
+export WLR_XWAYLAND
+
+exec wayfire "$@"

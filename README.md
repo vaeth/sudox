@@ -5,9 +5,10 @@ This project is under the BSD license 2.0 (“3-clause BSD license”).
 SPDX-License-Identifier: BSD-3-Clause
 
 sudox is a POSIX shell script which acts as a wrapper for
-`sudo -H` [`-s`] which can pass X cookies
+`sudo -H` [`-s`] which can pass X cookies.
 
 It is possible to create temporary untrusted X permissions.
+Moreover, wayland is supported via acls, variable passing, and a wrapper.
 Also some support for tty handling (e.g. screen and tmux) is provided.
 
 For more details, see the output of `sudox -h`
@@ -47,7 +48,44 @@ of zsh's `$fpath`.
 You need `push.sh` from https://github.com/vaeth/push (v2.0 or newer)
 in your `$PATH` as well.
 
+For wayfire support, copy also
+```
+usr/share/wayland-sessions/wayfire-auth.desktop
+```
+to the wayland session directory of the display-manager
+(presumably `/usr/share/wayland-sessions`), see the next section.
+
 For Gentoo, there is an ebuild in the mv overlay (available by layman).
+
+
+## Xwayland
+
+In order for sudox to take effect on `Xwayland`, `Xwayland` must be run with
+the options
+```
+Xwayland $DISPLAY -auth $XAUTHORITY ...
+```
+(and the `$XAUTHORITY` file must have been created).
+Depending on the compositor and how it is initialized, this might not be true,
+automatically.
+
+In particular, for wlroots based compositors like sway or wayfire, this is
+usually not the case.
+
+A workaround for wayfire (and similarly for other wlroots based compositors)
+may be to use the provided `wayfire-auth.desktop`. This works as follows:
+
+Instead of directly calling `wayfire`, this file calls `wayfire-auth`
+which is a script ending with
+```
+WLR_XWAYLAND=`command -v xwayland.auth`
+export WLR_XWAYLAND
+exec wayfire "$@"
+```
+The variable `WLR_XWAYLAND` means for wlroot that `xwayland.auth` is used
+instead of `Xwayland`. And `xwayland.auth` in turn is a wrapper for `Xwayland`
+which fills `$HOME/.Xauthority` as a new `$XAUTHORITY` file and calls
+`Xwayland` in the way described above.
 
 
 ## Security notes

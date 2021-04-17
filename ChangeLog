@@ -1,5 +1,9 @@
 # ChangeLog for sudox:
 
+*sudox-10.0:
+	Martin Väth <martin at mvath.de>:
+	- Add wayland support
+
 *sudox-9.1.1:
 	Martin Väth <martin at mvath.de>:
 	- Add SPDX-License-Identifier

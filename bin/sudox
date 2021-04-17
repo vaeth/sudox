@@ -17,8 +17,8 @@ SHELL_OPTS=
 # in the "Usage" function below. However, this script is also
 # called implicitly on the remote side.
 # The "Usage" on the remote side is never printed by this script,
-# because it is not supposed to be called by the user (and it might
-# change in future versions).
+# because it is not supposed to be called by the user (and it has already
+# changed and might change without note in future versions).
 # Currently, the syntax for the remote side is as follows:
 #
 # "$0" -remotecall \
@@ -27,6 +27,8 @@ SHELL_OPTS=
 #        "$display_removal" \
 #        "$SHELL" \
 #        "$HOME"|"" \
+#        "$WAYLAND_DISPLAY"|"" \
+#        "$XDG_RUNTIME_DIR"|"" \
 #        command [args for command]
 #
 # The cookies are expected according to the second argument above
@@ -158,7 +160,7 @@ ParseVariable() {
 }
 
 if [ x"${1-}" = x'-remotecall' ]
-then	[ $# -ge 6 ] || NonMatch 'not enough remote args'
+then	[ $# -ge 8 ] || NonMatch 'not enough remote args'
 	# set DISPLAY and XAUTHORITY for {Add,Remove}Authorities, but
 	# save previous values for ParseVariable
 	sx_display=${DISPLAY-}
@@ -190,7 +192,7 @@ then	[ $# -ge 6 ] || NonMatch 'not enough remote args'
 	*)
 		NonMatch 'bad transfer mode';;
 	esac
-	# Set SHELL and HOME _after_ ParseVariable
+	# Set other variables only _after_ ParseVariable
 	[ -z "${5:++}" ] || {
 		SHELL=$5
 		export SHELL
@@ -199,7 +201,15 @@ then	[ $# -ge 6 ] || NonMatch 'not enough remote args'
 		HOME=$6
 		export HOME
 	}
-	shift 6
+	[ -z "${7:++}" ] || {
+		WAYLAND_DISPLAY=$7
+		export WAYLAND_DISPLAY
+	}
+	[ -z "${8:++}" ] || {
+		XDG_RUNTIME_DIR=$8
+		export XDG_RUNTIME_DIR
+	}
+	shift 8
 	SUDO_COMMAND=${*-}
 	DoExec ${1+"$@"}
 fi
@@ -207,18 +217,24 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 9.1.1'
+	Echo 'sudox 10.0'
 	exit 0
 }
 
 Usage() {
 	Echo "Usage: ${0##*/} [options] [user [command]]
-Similar to sudo -H [-s] but transfer also X cookies and use a new tty
+Similar to sudo -H [-s] but transfer also X cookies and wayland permissions
+and use a new tty.
 If the variable SUDOX_OPT is set, its options are used as default
 -oOPT  add OPT to the list of options (arguments) passed to sudo
    This option can be used repeatedly, all OPT values being accumulated.
    In addition to -o, the one-letter options -a, -C -c, -g, -r (each with arg)
    and -A -b -E -i -K -k -n -P (each without arg) are directly passed to sudo
+-y (default) Attempt to set acls for the wayland socket (requires that
+   WAYLAND_DISPLAY is set, possibly also XDG_RUNTIME_DIR, and setfacl in PATH)
+-Y Do not attempt to set acls for the wayland socket
+-w (default) Attempt to export WAYLAND_DISPLAY and XDG_RUNTIME_DIR if it is set
+-W Do not attempt to export WAYLAND_DISPLAY or XDG_RUNTIME_DIR
 -l Clear STY/TMUX for the command/session (mnemonic: login environment)
 -s Start a tmux (fallback to screen) session
 -S Start a screen (fallback to tmux) session
@@ -349,6 +365,8 @@ sx_screen=
 sx_script=:
 sx_cenv=false
 sx_lenv=false
+sx_acl=:
+sx_way=:
 sx_root=
 sx_var=DISPLAY
 sx_fd=
@@ -386,7 +404,7 @@ SetFD() {
 
 ReadOpt() {
 	OPTIND=1
-	while getopts "v:F:lsSepHOuTUt:xXRNVho:a:C:c:g:r:AbEiKknP" sx_a
+	while getopts "v:F:lsSepHOuTUt:xXRNVho:a:C:c:g:r:AbEiKknPyYwW" sx_a
 	do	case $sx_a in
 		v)	sx_var=$OPTARG
 			[ x"${sx_var:--}" = x'-' ] || CheckVarname "$sx_var";;
@@ -404,6 +422,10 @@ ReadOpt() {
 		U)	sx_delx=:;;
 		x)	sx_dtrans=false;;
 		X)	sx_xtrans=false;;
+		y)	sx_acl=:;;
+		Y)	sx_acl=false;;
+		w)	sx_way=:;;
+		W)	sx_way=false;;
 		R)	sx_root=:;;
 		N)	sx_root=false;;
 		V)	Version;;
@@ -462,7 +484,7 @@ fi
 $sx_dtrans || sx_xtrans=false
 $sx_xtrans || sx_untrusted=false
 ! $sx_untrusted || sx_root=false
-[ -n "$sx_root" ] || if [ "$sx_remoteuse" = 'root' ]
+[ -n "$sx_root" ] || if [ x"$sx_remoteuse" = x'root' ]
 then	sx_root=:
 else	sx_root=false
 fi
@@ -516,6 +538,38 @@ then	sx_b=
 	[ -z "${sx_screen:++}" ] || DoExec "$sx_screen" $sx_dash ${1+"$@"}
 	DoExec ${1+"$@"}
 fi
+
+sx_xdg=
+sx_wad=
+if [ -n "${WAYLAND_DISPLAY:++}" ]
+then	case $WAYLAND_DISPLAY in
+	*/*)
+		sx_xdg=${WAYLAND_DISPLAY%/*}
+		sx_wad=$WAYLAND_DISPLAY;;
+	*)
+		if [ -n "${XDG_RUNTIME_DIR:++}" ]
+		then	sx_xdg=$XDG_RUNTIME_DIR
+			sx_wad=$sx_xdg/$WAYLAND_DISPLAY
+		fi
+	esac
+	test -d "$sx_xdg" && test -S "$sx_wad" || {
+		sx_xdg=
+		sx_wad=
+	}
+fi
+
+SetAcl() {
+	$sx_acl || return 0
+	[ x"$sx_remoteuse" != x'root' ] || return 0
+	[ -n "${sx_xdg:++}" ] && [ -n "${sx_wad:++}" ] || return 0
+	command -v setfacl >/dev/null 2>&1 || return 0
+	setfacl -m "$sx_remoteuse:r-x" -- "$sx_xdg"
+	setfacl -m "$sx_remoteuse:rwx" -- "$sx_wad"
+	if test -f "$sx_wad.lock"
+	then	setfacl -m "$sx_remoteuse:rw" -- "$sx_wad.lock"
+	fi
+}
+SetAcl
 
 # Calculate $sx_script path
 
@@ -609,7 +663,7 @@ GenRemote() {
 		fi
 		return
 	fi
-	# Store DISPLAY, SHELL, HOME _before_ calling Push -c $sx_var
+	# Store DISPLAY and other vars _before_ calling Push -c $sx_var
 	# because sx_var might have these values...
 	sx_b=
 	! $sx_dtrans || sx_b=${DISPLAY-}
@@ -637,6 +691,10 @@ GenRemote() {
 	fi
 	Push sx_sudoargs -H -- "$1" \
 		-remotecall "$sx_a" "$sx_b" "$sx_displays" "$sx_c" "$sx_home"
+	if $sx_way
+	then	Push sx_sudoargs "$sx_wad" "$sx_xdg"
+	else	Push sx_sudoargs '' ''
+	fi
 }
 GenRemote "$0"
 
@@ -667,13 +725,14 @@ fi
 unset sx_remoteuse sx_sudoargs sx_displays sx_dash have_random \
 sx_askpass sx_home sx_untrusted sx_delx sx_timeout sx_xtrans sx_dtrans \
 sx_screen sx_script sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind \
+sx_way sx_acl sx_xdg sx_wad \
 sx_a sx_b sx_c
 unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname \
 RemoveAuthorities AddAuthorities Troyan NonMatch \
 ReadTransfer ParseFifo ParseFD ParseVariable \
 Version Usage MkTemp SetFD ReadOpt HasDash \
 CalcTransferAll CalcTransferUntrusted CalcDisplays \
-TransferVariable GenRemote 2>/dev/null
+SetAcl TransferVariable GenRemote 2>/dev/null
 
 if [ -z "${sx_fifo:++}" ]
 then	# Passing cookies by FD
