@@ -6,9 +6,9 @@ XDG_SESSION_TYPE=wayland
 export XDG_SESSION_TYPE
 
 # Enable wayland for Gdk/Gtk+
-# wayland does not work yet with emacs, and x11 prevents wayfire from starting
-#GDK_BACKEND=wayland # x11
-#export GDK_BACKEND
+# Comment out to use <=emacs-28
+GDK_BACKEND=wayland # x11 # x11 prevents wayfire from starting
+export GDK_BACKEND
 
 # Enable wayland for QT
 QT_QPA_PLATFORM=wayland-egl

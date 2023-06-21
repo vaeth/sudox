@@ -1,5 +1,9 @@
 # ChangeLog for sudox:
 
+*sudox-10.0.1:
+	Martin Väth <martin at mvath.de>:
+	- Change wayfire-auth defaults for >=emacs-29 --with-pgtk
+
 *sudox-10.0:
 	Martin Väth <martin at mvath.de>:
 	- Add wayland support
