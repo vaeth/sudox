@@ -1,5 +1,15 @@
 # ChangeLog for sudox:
 
+*sudox-11.0:
+	Martin Väth <martin at mvath.de>:
+	- Let option -T take an argument for using "script" or not.
+	- New default is to *not* use "script" (previously -T, now -T-),
+	  because >=sudo-1.9.14 opens a pseudo terminal by default, thus taking
+	  care about the security problem. Moreover, "script" used to hang
+	  sometimes, and tmux and screen do not seem to have permission
+	  problems even without "script" anymore.
+	- Fix path detection of tmux/screen.
+
 *sudox-10.0.1:
 	Martin Väth <martin at mvath.de>:
 	- Change wayfire-auth defaults for >=emacs-29 --with-pgtk

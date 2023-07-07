@@ -21,7 +21,7 @@ _arguments -C -s -S -A '-*' : $opts \
 '-p[Ignore ASKPASS]' \
 '-O[keep/restore original HOME]' \
 '-H[Update HOME (default)]' \
-'-T[Do not call script - danger when interactive]' \
+'-T+[Open pseudo terminal or not]:pty:->pty' \
 '(-R -N)-u[Generate only an untrusted permission]' \
 '-t+[Use specified time for untrusted permission]:time:(0)' \
 '(-u -t)-U[Delete X remote authority similar to -ut1]' \
@@ -66,5 +66,12 @@ case $state in
 	'-:pass via FIFO'
 	)
 	_describe -t 'file descriptors' 'file descriptor' fds && ret=0;;
+(pty)
+	local pty
+	pty=(
+	's:Use script to open pseudo terminal'
+	'-:do not open pseudo terminal'
+	)
+	_describe -t 'pseudo terminal' 'pseudo terminal' pty && ret=0;;
 esac
 return ret

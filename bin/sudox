@@ -217,7 +217,7 @@ fi
 # Now the main part of the script (i.e. the "server" side called by the user):
 
 Version() {
-	Echo 'sudox 10.0'
+	Echo 'sudox 11.0'
 	exit 0
 }
 
@@ -245,9 +245,9 @@ If the variable SUDOX_OPT is set, its options are used as default
    sudo might need to be configured to keep the HOME environment variable
    and to not use always_set_home.
 -H Cancel a previous -O (analogous to sudo -H)
--T Do not call \"script\" to open a new tty (security risk if tty is used!)
-   If -xT are used but not -s/-S/-U then act similar to \"sudo -H -u user --\"
-   This is useful if special entries in /etc/sudoers should be prepared.
+-T[s-] Call \"script\" (or not) to open a pseudo terminal.  Default is -T-.
+   >=sudo-1.9.14 opens a pseudo terminal by default, but old versions do not.
+   Not opening a pseudo terminal is a security risk, opening twice ineffective.
 -u Generate only an untrusted permission. (This requires that your xorg-server
    was compiled with --enable-xcsecurity.) This option implies -N
 -tTIMEOUT  (in seconds). Time for which the untrusted permission is valid.
@@ -255,7 +255,9 @@ If the variable SUDOX_OPT is set, its options are used as default
    This option is ignored without -u
 -U Delete all related X authority data of the new user (similar to -ut1).
    If combined with -r, the new user might have access to X anyway
--x Do not transfer X cookies, DISPLAY or SHELL. Also ignore -u
+-x Do not transfer X cookies, DISPLAY or SHELL. Also ignore -u.
+   If -xT- are used but not -s/-S/-U then act similar to \"sudo -H -u user --\",
+   in particular, command name and args can be matched in /etc/sudoers{,.d}.
 -X As -x but transfer DISPLAY and SHELL even if sudo does not pass this data
 -R Use root mode: Assume that XAUTHORITY (defaults to ~/.Xauthority) can be
    read by the destination user, and set XAUTHORITY instead of cookie passing.
@@ -279,8 +281,8 @@ If the variable SUDOX_OPT is set, its options are used as default
    b) If # is 0, no sudo configuration is necessary. #a must not be specified
    (or empty) or 0: In the latter case (-F0,0) \"cat\" will be used to pipe the
    input to the command; use this only when sudox is at the end of a pipe.
-   In the former case (-F0), input will be closed. Recommendation: Use with -T
-   Recommended example: sudox -TF0 user true && sudox -X user [command ...]
+   In the former case (-F0), input will be closed. Recommendation: Use with -T-
+   Recommended example: sudox -T-F0 user true && sudox -X user [command ...]
    c) If # is \"-\" (-F-) then instead of a file descriptor a world-readable
    FIFO in a temporary directory is used for X cookie passing (not very secure)
 -V Print version
@@ -362,7 +364,7 @@ sx_timeout=0
 sx_xtrans=:
 sx_dtrans=:
 sx_screen=
-sx_script=:
+sx_pty=
 sx_cenv=false
 sx_lenv=false
 sx_acl=:
@@ -402,9 +404,18 @@ SetFD() {
 		Fatal 'auxiliary file descriptor number must be at least 3'
 }
 
+SetPty() {
+	case ${1:--} in
+	[sS]*)
+		sx_pty=:;;
+	*)
+		sx_pty=;;
+	esac
+}
+
 ReadOpt() {
 	OPTIND=1
-	while getopts "v:F:lsSepHOuTUt:xXRNVho:a:C:c:g:r:AbEiKknPyYwW" sx_a
+	while getopts "v:F:lsSepHOuT:Ut:xXRNVho:a:C:c:g:r:AbEiKknPyYwW" sx_a
 	do	case $sx_a in
 		v)	sx_var=$OPTARG
 			[ x"${sx_var:--}" = x'-' ] || CheckVarname "$sx_var";;
@@ -416,7 +427,7 @@ ReadOpt() {
 		p)	sx_askpass=false;;
 		H)	sx_home=:;;
 		O)	sx_home=;;
-		T)	sx_script=;;
+		T)	SetPty "$OPTARG";;
 		u)	sx_untrusted=:;;
 		t)	sx_timeout=$OPTARG;;
 		U)	sx_delx=:;;
@@ -493,19 +504,19 @@ fi
 
 if [ -n "${sx_screen:++}" ]
 then	for sx_a in $sx_screen
-	do	if sx_screen=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
-command -v "$sx_a" 2>/dev/null` && [ -n "${sx_screen:++}" ]
+	do	sx_screen=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
+command -v "$sx_a" 2>/dev/null` || sx_screen=
+		if [ -n "${sx_screen:++}" ]
 		then	case $sx_a in
-			sx_screen)
+			screen)
 				unset STY;;
 			tmux)
 				unset TMUX;;
 			esac
 			break
-		else	sx_screen=
 		fi
 	done
-	[ -z "${sx_screen:++}" ] || Fatal 'tmux/screen not found'
+	[ -n "${sx_screen:++}" ] || Fatal 'tmux/screen not found'
 fi
 
 HasDash() {
@@ -533,7 +544,7 @@ then	sx_b=
 	then	sx_b=$sx_b' -u'
 	else	sx_b='. ignoring -u'
 	fi
-	[ -z "$sx_script" ] || sx_b=$sx_b'. forcing -T'
+	[ -z "$sx_pty" ] || sx_b=$sx_b'. forcing -T-'
 	[ -z "$sx_b" ] || Warning "warning: remote user is the current user$sx_b"
 	[ -z "${sx_screen:++}" ] || DoExec "$sx_screen" $sx_dash ${1+"$@"}
 	DoExec ${1+"$@"}
@@ -571,12 +582,12 @@ SetAcl() {
 }
 SetAcl
 
-# Calculate $sx_script path
+# Calculate $sx_pty path
 
-if [ -n "$sx_script" ]
-then	sx_script=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
-command -v script 2>/dev/null` && [ -n "$sx_script" ] \
-		|| Fatal '"sx_script" not found'
+if [ -n "$sx_pty" ]
+then	sx_pty=`PATH=/bin:/usr/bin::/sbin:/usr/sbin${PATH:+:}${PATH-} \
+command -v script 2>/dev/null` && [ -n "$sx_pty" ] \
+		|| Fatal '"script" not found'
 fi
 
 # Check for SUDO_ASKPASS
@@ -658,7 +669,7 @@ fi
 GenRemote() {
 	sx_exec=:
 	if ! $sx_dtrans && ! $sx_delx
-	then	if [ -n "${sx_dash:++}" ] || HasDash "$sx_script" "$sx_screen"
+	then	if [ -n "${sx_dash:++}" ] || HasDash "$sx_pty" "$sx_screen"
 		then	Push sx_sudoargs ${sx_home:+-H} --
 		fi
 		return
@@ -698,12 +709,12 @@ GenRemote() {
 }
 GenRemote "$0"
 
-if [ -n "$sx_script" ]
+if [ -n "$sx_pty" ]
 then	if [ -n "${sx_screen:++}" ]
 	then	Push -c sx_a exec "$sx_screen" $sx_dash ${1+"$@"}
 	else	Push -c sx_a ${1+"$@"}
 	fi
-	Push sx_sudoargs "$sx_script" -q -e \
+	Push sx_sudoargs "$sx_pty" -q -e \
 		${sx_a:+-c} ${sx_a:+"$sx_a"} /dev/null
 else	if [ -n "${sx_screen:++}" ]
 	then	Push sx_sudoargs "$sx_screen" $sx_dash ${1+"$@"}
@@ -724,7 +735,7 @@ fi
 # Free memory:
 unset sx_remoteuse sx_sudoargs sx_displays sx_dash have_random \
 sx_askpass sx_home sx_untrusted sx_delx sx_timeout sx_xtrans sx_dtrans \
-sx_screen sx_script sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind \
+sx_screen sx_pty sx_cenv sx_lenv sx_root sx_var sx_opt sx_optind \
 sx_way sx_acl sx_xdg sx_wad \
 sx_a sx_b sx_c
 unset -f Echo MsgErr Warning Fatal Push DoExec IsNumber CheckVarname \
